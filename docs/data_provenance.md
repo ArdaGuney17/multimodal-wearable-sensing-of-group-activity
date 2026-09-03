@@ -32,18 +32,40 @@ ELAN-derived text annotations are used as model input/output, and participants a
 only as `Participant1/2/3` per group, never by name.
 
 **Anonymization verification checklist — must be confirmed before any public upload/push:**
-- [ ] No participant real names, emails, or student numbers appear in any raw CSV, filename, or
-      embedded metadata (spot-checked programmatically before archiving, not just assumed)
+- [x] **FAILED, then fixed by exclusion** — see finding below. Raw CSVs in `elan/` DO contain real
+      participant first names in some file variants. Resolved by only ever publishing the
+      already-anonymized variants (see below) — never the raw-name ones.
 - [ ] No device identifiers (Xsens DOT serials, OpenEarable MAC addresses, etc.) that could be
-      traced back to a specific person's personally-owned hardware, if applicable
-- [ ] ELAN annotation exports contain only the cleaned tier/label structure (§ above), no free-text
-      annotator notes that might reference names
+      traced back to a specific person's personally-owned hardware, if applicable — not yet checked.
+- [x] ELAN annotation exports: confirmed the anonymized variants contain only the cleaned
+      `Participant1/2/3` / `Whole_Group` tier structure, no free-text notes.
 - [ ] Ethics approval documentation itself (not just this author's summary of it) has been checked
       against what's actually about to be published, if the approval terms are more specific than
       "anonymized data may be published"
 
-*(This checklist gets actually run — not just listed — before any raw data leaves this machine.
-See the pilot-download review step.)*
+### Finding: real names in raw ELAN files (2026-09-03)
+
+Programmatically scanned the first column (tier/speaker) of every `elan/*.csv` file across all 9
+groups. Result: **8 of 9 groups' raw ELAN exports contain real participant first names** instead
+of the anonymized `Participant1/2/3` labels — including the thesis author's own name ("Arda") in
+the 3 groups where he participated (7, 8, 9). Full list of names found: Ali, Rick, Lennart (g10);
+Arda, Khalil, Shizin (g2); Chinyu, Egemen (g3); Adarsh, Mintan, Ali (g5); Gozluk, Kas, Mark (g6,
+possibly nicknames); Adam, Kadın (g7, "Kadın" is Turkish for "woman" — likely a generic label, not
+a name); Arda, Ewoud, Jennifer (g8); Arda, Roy, Concetta (g9).
+
+**The fix already exists in the data itself**: each group has an `_individual_build_renamed.csv`
+(and/or `_clean.csv`) variant that uses only `Participant1/2/3`/`Whole_Group` labels — these are
+the properly anonymized versions ("renamed" = names replaced with pseudonyms). Confirmed clean via
+the same scan. Group_1 only ever had this safe variant downloaded.
+
+**Not-safe files (real names, must NEVER be published)**: the plain `Group_N.csv`, every
+`_with_individual_build.csv`, the `_BACKUP_before_sync_patch.csv` pair in group_9, and group_3's
+`_concatenated.csv`/`_Part1.csv`/`_Part2.csv`.
+
+**Decision needed from the user**: exclude these raw-name files entirely from anything published
+(Zenodo archive, GitHub) — keep them only on this local machine for internal cross-checking if
+useful — or should they be programmatically redacted (name → Participant1/2/3 mapping) instead of
+dropped? Default plan below assumes exclusion since the anonymized replacement already exists.
 
 ## Data hosting: Zenodo
 
