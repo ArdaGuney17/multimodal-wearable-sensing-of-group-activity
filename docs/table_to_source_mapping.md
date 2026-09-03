@@ -44,8 +44,8 @@ all, in `src/models/task3_grammar.py`'s docstring and `_prepare_text_group_token
 |---|---|---|---|
 | Part I (cell 8) — build six-label activity tokens | input to everything else in Ch.8 | `src/models/task3_tokens.py` | 🟨 ported (dual-path: reload existing table, or build from scratch — the from-scratch path is **unverified**, the original workflow copied in a pre-built table from a 4th notebook we don't have, see module docstring) |
 | "Appendix R" (cells 50–54) — n-gram/HMM/hybrid grammar over all 244 tokens | **Table 8.7 — THE WINNING RESULT** | `src/models/task3_grammar.py` | 🟨 ported + smoke-tested on synthetic data; not yet run against the real token table |
-| Part II (cell 10) — corrected common-target grammar/sensor/hybrid (217 targets) | contributes to Table 8.3 (unconfirmed — needs code-level check like the above, don't assume) | not started | ⬜ |
-| Part III (cell 12) — leakage-free neural (Transformer/LSTM) on 217 common targets, 3 seeds | Table 8.4 | not started | ⬜ |
+| Part II (cell 10) — corrected common-target grammar/sensor/hybrid (217 targets) | `segment_markov_h1` feeds **both** Table 8.4's "Segment Markov" row AND Table 8.7's "First-order segment Markov" row (verified: both 0.481/0.285). The other 4 models' common-target numbers aren't directly tabulated — narrative-only, motivating the task3_grammar.py follow-up (§8.9 "the earlier comparison") | `src/models/task3_common_targets.py` | 🟨 ported + smoke-tested |
+| Part III (cell 12) — leakage-free neural (Transformer/LSTM) on 217 common targets, 3 seeds | Table 8.4 (Transformer labels-only / Transformer+sensors / LSTM+sensors rows) | not started | ⬜ |
 | Part IV (cell 15) — merge II+III into publication tables | assembles 8.3/8.4 panels | not started | ⬜ |
 | Appendix A (cells 18–27) — window-level 7-label history, all-window vs. transition-only | Table 8.2 (§8.4 "Persistence Problem") | not started | ⬜ |
 | Appendix B (cells 29–41) — segment-level sensor-feature forecast + decode | Table 8.3 (needs disambiguation vs. Part II, see above) | not started | ⬜ |
