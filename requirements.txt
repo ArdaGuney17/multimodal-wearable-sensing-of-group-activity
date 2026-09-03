@@ -1,0 +1,11 @@
+# Pinned loosely for now — will tighten once ported code confirms exact versions used originally.
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+scikit-learn>=1.3
+torch>=2.1
+matplotlib>=3.8
+pyyaml>=6.0
+tqdm>=4.66
+joblib>=1.3
+pyarrow>=14.0
