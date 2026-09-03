@@ -62,10 +62,13 @@ the same scan. Group_1 only ever had this safe variant downloaded.
 `_with_individual_build.csv`, the `_BACKUP_before_sync_patch.csv` pair in group_9, and group_3's
 `_concatenated.csv`/`_Part1.csv`/`_Part2.csv`.
 
-**Decision needed from the user**: exclude these raw-name files entirely from anything published
-(Zenodo archive, GitHub) — keep them only on this local machine for internal cross-checking if
-useful — or should they be programmatically redacted (name → Participant1/2/3 mapping) instead of
-dropped? Default plan below assumes exclusion since the anonymized replacement already exists.
+**Decision (2026-09-03): exclude.** The raw-name files stay on this local machine only — never
+committed (already true, `data/raw/` is gitignored) and, critically, **never included in the
+Zenodo archive** built later. When the Zenodo upload bundle is prepared, it must explicitly skip:
+`Group_N.csv`, `Group_N_with_individual_build.csv`, `Group_9_*_BACKUP_before_sync_patch.csv`,
+`Group_3_concatenated.csv`, `Group_3_Part1.csv`, `Group_3_Part2.csv` — only `*_individual_build_
+renamed.csv` and `*_clean.csv` (or group_1's single safe file) ship publicly. This exclusion list
+must be encoded directly in whatever script builds that archive, not just remembered.
 
 ## Data hosting: Zenodo
 
