@@ -30,11 +30,12 @@ methodology, and every target number are documented in
 
 ```
 data/
-  raw/          # Raw per-group sensor recordings + ELAN annotations (Git LFS). The only
-                 # data actually committed — everything below is regenerated.
+  raw/          # Raw per-group sensor recordings + ELAN annotations. NOT committed to git —
+                 # archived on Zenodo (see docs/data_provenance.md) and pulled locally by
+                 # `python -m src.data.download`.
   processed/    # Synced, windowed, feature-engineered outputs. NOT committed (.gitignore) —
                  # produced by running src/preprocessing and src/features.
-  external/     # Any third-party reference data, if needed (Git LFS).
+  external/     # Any third-party reference data, if needed.
 src/
   preprocessing/  # Sync, cleaning, annotation normalization, windowing
   features/       # Feature engineering per sensor family (Ch.5)
@@ -55,7 +56,6 @@ notebooks_reference/  # Original notebooks kept for reference during porting onl
 ## Setup
 
 ```bash
-git lfs install
 git clone <repo-url>
 cd multimodal-group-activity-recognition
 python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
@@ -64,11 +64,17 @@ pip install -r requirements.txt
 
 ### Data
 
-Raw sensor data is tracked via Git LFS in `data/raw/`. If you cloned without LFS pulling
-automatically, run `git lfs pull`. See
-[`docs/drive_source_inventory.md`](docs/drive_source_inventory.md) for what each raw subfolder
-contains and [`docs/table_to_source_mapping.md`](docs/table_to_source_mapping.md) for known data
-issues (e.g. a mislabeled folder) still being verified.
+Raw sensor data (~a few GB, all 9 groups' OptiTrack/Xsens/OpenEarable/ELAN recordings) is
+archived on Zenodo — **not** committed to this repository — under DOI: `<TODO: fill in once
+uploaded>`. Fetch it with:
+
+```bash
+python -m src.data.download   # downloads + extracts into data/raw/, verifies checksums
+```
+
+See [`docs/drive_source_inventory.md`](docs/drive_source_inventory.md) for what each raw
+subfolder contains and [`docs/table_to_source_mapping.md`](docs/table_to_source_mapping.md) for
+known data issues (e.g. a mislabeled folder) still being verified.
 
 ### Reproducing a table
 
