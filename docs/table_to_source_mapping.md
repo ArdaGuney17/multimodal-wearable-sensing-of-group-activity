@@ -17,8 +17,42 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ ported + numbers verif
 | Task 2a–2e — activity recognition | Ch.7 §7.4 (Tables 7.3–7.7) | `github notebooks/actual ones/task2_full_comparison_RESUMABLE_with_std.ipynb` | `src/models/task2.py` (+ shared `src/models/common.py`) | 🟨 ported + smoke-tested (incl. the 2e three-class task specifically) on synthetic data; **not yet run against real thesis numbers** — same feature-CSV dependency as Task 1 |
 | Dedicated OpenEarable experiments (OE9, SPECIAL_OE) | Ch.7 §7.5 (Tables 7.8–7.10) | `THESIS_NOTEBOOKS/ML/oe_conversation_nonconversation_experiment.ipynb`, `data/INTERACTION_OE9`, `INTERACTION_OE8`, `INTERACTION_OE10` | `src/models/task_oe_specific.py` | ⬜ |
 | Naive-cohort / researcher-participation sensitivity | Ch.7 §7.6 (Tables 7.11–7.13), Ch.8 §8.10 (Table 8.8) | `thesis/after_GL/seven_winners_naive5.ipynb`, `naive5_best_per_task.ipynb`, `naive5_headline_rerun.ipynb` — **newest files in all of Drive (Aug 17), same day as final thesis submission — highest-trust source for headline numbers** | `src/eval/naive_cohort.py` | ⬜ |
-| Task 3 — next-activity forecasting (all of Ch.8) | Ch.8 (Tables 8.1–8.8) | `github notebooks/actual ones/task3_FINAL_V2_with_exact_report_reproduction.ipynb` — name explicitly claims exact report reproduction | `src/models/task3.py` | ⬜ |
+| Task 3 — next-activity forecasting (all of Ch.8) | Ch.8 (Tables 8.1–8.8) | `github notebooks/actual ones/task3_FINAL_V2_with_exact_report_reproduction.ipynb` — see breakdown below, this one notebook is big enough to need its own table | see below | 🟨 partial, see below |
 | Table 10.1 (cohort comparison) | Ch.10 §10.5 | derived from the naive5 vs. full-9 evaluation outputs above, no separate notebook identified yet | `src/eval/naive_cohort.py` (shared with 7.11–7.13) | ⬜ |
+
+## Task 3 breakdown (source: `task3_FINAL_V2_with_exact_report_reproduction.ipynb`, 43 code cells)
+
+This one notebook covers all of Table 8.1–8.8, organized into a "mandatory core" (Parts I–IV) plus
+four "optional" appendices plus a section the notebook itself calls "Appendix R" — **that last
+name is misleading for reproduction purposes, see the finding below.**
+
+**Important finding (verified against the actual code, not just the thesis text):** the notebook's
+own docs frame "Appendix R" as a disposable check — reproducing an old, "methodologically
+superseded" evaluation protocol against the corrected Parts II–IV pipeline elsewhere in the same
+notebook. That framing is backwards for us: the thesis's own text (§8.9, "THE WINNING RESULT")
+describes exactly this computation — n-gram/HMM/hybrid over all 244 tokens starting from position
+1, not the "common-target" 217-target restriction Parts II–IV use — as what actually produced
+**Table 8.7, the thesis's headline Task 3 result.** Confirmed by matching numbers: "Appendix R"'s
+own `REPORT_REFERENCE` dict (`ngram_backoff_h2: (0.604, 0.499)`, etc.) is *exactly* Table 8.7's
+published values. There's also a genuine reproducibility trap baked into the source code: it only
+hits those exact numbers when the token `group` column is treated as **text**, not int — the
+notebook's own comment records having verified both (`int order -> h=2 0.596/0.460 ; text order ->
+0.604/0.499`) and chose text deliberately for tie-breaking reasons. Ported faithfully, quirk and
+all, in `src/models/task3_grammar.py`'s docstring and `_prepare_text_group_tokens()`.
+
+| Notebook part | Produces | Repo destination | Status |
+|---|---|---|---|
+| Part I (cell 8) — build six-label activity tokens | input to everything else in Ch.8 | `src/models/task3_tokens.py` | 🟨 ported (dual-path: reload existing table, or build from scratch — the from-scratch path is **unverified**, the original workflow copied in a pre-built table from a 4th notebook we don't have, see module docstring) |
+| "Appendix R" (cells 50–54) — n-gram/HMM/hybrid grammar over all 244 tokens | **Table 8.7 — THE WINNING RESULT** | `src/models/task3_grammar.py` | 🟨 ported + smoke-tested on synthetic data; not yet run against the real token table |
+| Part II (cell 10) — corrected common-target grammar/sensor/hybrid (217 targets) | contributes to Table 8.3 (unconfirmed — needs code-level check like the above, don't assume) | not started | ⬜ |
+| Part III (cell 12) — leakage-free neural (Transformer/LSTM) on 217 common targets, 3 seeds | Table 8.4 | not started | ⬜ |
+| Part IV (cell 15) — merge II+III into publication tables | assembles 8.3/8.4 panels | not started | ⬜ |
+| Appendix A (cells 18–27) — window-level 7-label history, all-window vs. transition-only | Table 8.2 (§8.4 "Persistence Problem") | not started | ⬜ |
+| Appendix B (cells 29–41) — segment-level sensor-feature forecast + decode | Table 8.3 (needs disambiguation vs. Part II, see above) | not started | ⬜ |
+| Appendix C (cell 43) — expanding-prefix fine-13 vs. coarse-4 next-segment | Table 8.5 | not started | ⬜ |
+| Appendix D (cells 46–48) — HMM / 5-class collective-state, causal vs. Viterbi | Table 8.6 | not started | ⬜ |
+| naive-5 rerun of the Appendix-R grammar | Table 8.8 | not started (same pattern as Task 1's `run_naive5_reproduction`) | ⬜ |
+| Cell 56 (large model-ready data inspection) | nothing — leftover exploration tooling | intentionally not porting | — |
 
 ## Known duplication to resolve before porting (see `drive_source_inventory.md` §4 for full detail)
 
