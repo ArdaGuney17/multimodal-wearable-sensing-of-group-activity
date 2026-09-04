@@ -9,16 +9,21 @@ IDENTITY" (cell 7 — the notebook's own final cell). See
 notebooks_reference/Global_Cleaning_Before_Model_ANALYSIS.md for the full
 porting notes.
 
-INPUT DEPENDENCY / KNOWN GAP (see docs/table_to_source_mapping.md): this
-stage's input is a set of already time-synced, already ELAN-labeled
-per-group per-sensor CSVs (`{data_root}/group_{g}/{sensor}/{sensor}_labeled/
-<filename>`), hand-selected below in SELECTED_FILE_NAMES. The code that
-actually produced most of those files (sync/label attachment for groups
-2,3,6,7,8,9,10) is not present in any notebook found in Drive — only
-group 1's sync code (`sensor_sync_fixed.ipynb`) was recoverable. Those
-`*_labeled*.csv` files themselves still exist in the original Drive data
-and are treated here as a **fixed intermediate input**, the same way raw
-sensor data would be, rather than something this pipeline re-derives.
+INPUT DEPENDENCY (see docs/table_to_source_mapping.md's "Raw sensor sync &
+cleaning" row): this stage's input is a set of already time-synced, already
+ELAN-labeled per-group per-sensor CSVs (`{data_root}/group_{g}/{sensor}/
+{sensor}_labeled/<filename>`), hand-selected below in SELECTED_FILE_NAMES.
+The code that actually produces these files was located this session:
+FINAL_ARDA_THESIS.ipynb (openearable + xsens, all 9 groups — a per-group
+peak-alignment sync against an ELAN "synchronizaiton_move" anchor label) and
+OPTI_TRACK_PROCESSING.ipynb (optitrack, all 9 groups — an analogous
+movement-score-peak sync, human-confirmed per group). Neither has been
+ported into this repo as runnable code yet (both are heavy with per-group
+hand-curated constants/marker-stitching, not push-button algorithms) — the
+`*_labeled*.csv` files themselves are still treated here as a **fixed
+intermediate input** rather than something this specific module re-derives.
+See notebooks_reference/FINAL_ARDA_THESIS_ANALYSIS.md and
+notebooks_reference/OPTI_TRACK_PROCESSING_ANALYSIS.md for the full trace.
 
 Not actually windowed: despite the docs' Ch.4 §4.7-4.9 heading
 ("windowing"), this stage produces per-sample (native-rate) output —
@@ -70,25 +75,37 @@ CANONICAL_LABEL_COLS = [
 # last-10-peak, sync-peak, early-peak), chosen by hand; a human picked
 # which corrected variant to trust. All live under the uniform
 # `{data_root}/group_{g}/{sensor}/{sensor}_labeled/` directory.
+#
+# 2026-09-04 update: the sync-shift source code was located this session
+# (FINAL_ARDA_THESIS.ipynb for openearable/xsens, OPTI_TRACK_PROCESSING.ipynb
+# for optitrack — see docs/table_to_source_mapping.md's "Raw sensor sync &
+# cleaning" row). Cross-checking against FINAL_ARDA_THESIS.ipynb's own last-
+# executed dashboard cell (its final, most-recent record of which variant the
+# author was actually looking at) surfaced 4 mismatches with what was
+# previously selected here — (1,xsens), (3,openearable), (5,xsens),
+# (6,xsens) were pointing at *_shifted*/*_SHIFTED* variants the notebook's
+# own last run shows were tried but not adopted. Corrected below to match the
+# notebook's last-run selection, per an explicit author decision (2026-09-04)
+# to trust that over the pipeline's prior guess.
 SELECTED_FILE_NAMES = {
     (1, "openearable"): "group_1_openearable_labeled.csv",
-    (1, "xsens"): "group_1_xsens_labeled_shifted_by_last10_peak.csv",
+    (1, "xsens"): "group_1_xsens_labeled.csv",
     (1, "optitrack"): "group_1_optitrack_labeled.csv",
 
     (2, "openearable"): "group_2_openearable_labeled.csv",
     (2, "xsens"): "group_2_xsens_labeled.csv",
     (2, "optitrack"): "group_2_optitrack_labeled.csv",
 
-    (3, "openearable"): "group_3_openearable_labeled_shifted_by_sync_peak.csv",
+    (3, "openearable"): "group_3_openearable_labeled.csv",
     (3, "xsens"): "group_3_xsens_labeled.csv",
     (3, "optitrack"): "group_3_optitrack_labeled.csv",
 
     (5, "openearable"): "group_5_openearable_labeled.csv",
-    (5, "xsens"): "group_5_xsens_labeled_shifted_by_clap_sync_peak.csv",
+    (5, "xsens"): "group_5_xsens_labeled.csv",
     (5, "optitrack"): "group_5_optitrack_labeled.csv",
 
     (6, "openearable"): "group_6_openearable_labeled.csv",
-    (6, "xsens"): "group_6_xsens_labeled_cleaned_SHIFTED.csv",
+    (6, "xsens"): "group_6_xsens_labeled_cleaned.csv",
     (6, "optitrack"): "group_6_optitrack_labeled.csv",
 
     (7, "openearable"): "group_7_openearable_labeled_SHIFTED.csv",

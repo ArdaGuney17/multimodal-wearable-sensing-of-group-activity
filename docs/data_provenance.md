@@ -53,13 +53,28 @@ Arda, Khalil, Shizin (g2); Chinyu, Egemen (g3); Adarsh, Mintan, Ali (g5); Gozluk
 possibly nicknames); Adam, Kadın (g7, "Kadın" is Turkish for "woman" — likely a generic label, not
 a name); Arda, Ewoud, Jennifer (g8); Arda, Roy, Concetta (g9).
 
+**Update (2026-09-04), from reading `FINAL_ARDA_THESIS.ipynb`'s own code** (the notebook that
+builds every group's `_individual_build_renamed.csv` — see `docs/table_to_source_mapping.md`'s
+"Raw sensor sync & cleaning" row). Its hardcoded per-group `NAME` dicts confirm the list above and
+add one previously-missed name — **Group 3's third participant is `"long"`** (lowercase, code
+literal at `FINAL_ARDA_THESIS.ipynb` line 5902; the file scan above had only found "Chinyu, Egemen"
+for group 3, one short). Separately, this same notebook's code reads a raw-name `Group_1.csv`
+directly (`ELAN_PATH` at line 926, names `{"Arda","Bas","Rachel"}`) — contradicting the "Group_1
+only ever had this safe variant downloaded" note below, which was only ever true of what had been
+*downloaded to this machine* at scan time, not of what exists in Drive. **A raw-name `Group_1.csv`
+almost certainly exists in Drive and has not yet been located/added to the not-safe list below** —
+treat Group 1 as unconfirmed-safe (not yet cleared) until that file is found there and excluded
+the same way as the other 8 groups' raw files.
+
 **The fix already exists in the data itself**: each group has an `_individual_build_renamed.csv`
 (and/or `_clean.csv`) variant that uses only `Participant1/2/3`/`Whole_Group` labels — these are
 the properly anonymized versions ("renamed" = names replaced with pseudonyms). Confirmed clean via
-the same scan. Group_1 only ever had this safe variant downloaded.
+the same scan. Group_1 only ever had this safe variant downloaded **to this machine** — see the
+update above regarding Drive itself.
 
-**Not-safe files (real names, must NEVER be published)**: the plain `Group_N.csv`, every
-`_with_individual_build.csv`, the `_BACKUP_before_sync_patch.csv` pair in group_9, and group_3's
+**Not-safe files (real names, must NEVER be published)**: the plain `Group_N.csv` (all 9 groups,
+including Group 1 — see update above), every `_with_individual_build.csv`, the
+`_BACKUP_before_sync_patch.csv` pair in group_9, and group_3's
 `_concatenated.csv`/`_Part1.csv`/`_Part2.csv`.
 
 **Decision (2026-09-03): exclude.** The raw-name files stay on this local machine only — never
