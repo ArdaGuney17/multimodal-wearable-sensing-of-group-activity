@@ -81,31 +81,64 @@ CANONICAL_LABEL_COLS = [
 # for optitrack — see docs/table_to_source_mapping.md's "Raw sensor sync &
 # cleaning" row). Cross-checking against FINAL_ARDA_THESIS.ipynb's own last-
 # executed dashboard cell (its final, most-recent record of which variant the
-# author was actually looking at) surfaced 4 mismatches with what was
+# author was actually looking at) surfaced 4 apparent mismatches with what was
 # previously selected here — (1,xsens), (3,openearable), (5,xsens),
-# (6,xsens) were pointing at *_shifted*/*_SHIFTED* variants the notebook's
-# own last run shows were tried but not adopted. Corrected below to match the
-# notebook's last-run selection, per an explicit author decision (2026-09-04)
-# to trust that over the pipeline's prior guess.
+# (6,xsens) — and this table was changed to the notebook's last-run selection
+# for all 4.
+#
+# 2026-09-05 correction (real-data global_cleaning validation, Group 1):
+# the (1,xsens) change above was WRONG and has been reverted. Ground truth
+# is `notebooks_reference/Global_Cleaning_Before_Model.ipynb`'s own cell 3
+# ("FINAL MODEL-READY PROCESSING WITH MANUALLY SELECTED FILES") literal
+# `SELECTED_FILES` dict, which hardcodes
+# `f"{BASE}/group_1/xsens/xsens_labeled/group_1_xsens_labeled_shifted_by_last10_peak.csv"`
+# for (1, "xsens") — i.e. the SHIFTED variant. This is independently
+# confirmed by the real official
+# `data/external/thesis_data/RAW_VALIDATION_FEATURES/group_1/group_1_xsens_model_ready.csv`
+# fixture itself: its own `model_ready_source_file`/`model_ready_source_path`
+# columns literally read
+# `group_1_xsens_labeled_shifted_by_last10_peak.csv` /
+# `.../group_1/xsens/xsens_labeled/group_1_xsens_labeled_shifted_by_last10_peak.csv`
+# for every row. So FINAL_ARDA_THESIS.ipynb's "last-run dashboard cell" (used
+# to justify the 2026-09-04 change) was evidently showing a variant the
+# author was experimenting with but had NOT adopted for the actual
+# global-cleaning input — cell 3's literal dict (and the real shipped
+# model_ready file) both disagree with it for this entry.
+#
+# 2026-09-05 follow-up check: the other 3 entries changed on 2026-09-04 —
+# (3,openearable), (5,xsens), (6,xsens) — were flagged above as suspect and
+# have now been cross-checked directly against
+# `notebooks_reference/Global_Cleaning_Before_Model.ipynb` cell 3's own
+# literal `SELECTED_FILES` dict (the same authoritative source used for the
+# (1,xsens) fix above). All 3 turned out to be WRONG in the same direction —
+# each was missing the shift-variant suffix the notebook's dict actually
+# uses — and have been corrected to match the notebook exactly:
+#   (3, "openearable"): "group_3_openearable_labeled.csv"        -> "group_3_openearable_labeled_shifted_by_sync_peak.csv"
+#   (5, "xsens"):       "group_5_xsens_labeled.csv"               -> "group_5_xsens_labeled_shifted_by_clap_sync_peak.csv"
+#   (6, "xsens"):       "group_6_xsens_labeled_cleaned.csv"       -> "group_6_xsens_labeled_cleaned_SHIFTED.csv"
+# (Not independently re-confirmed against a real model_ready fixture the way
+# (1,xsens) was — no such fixture was consulted for groups 3/5/6 this round —
+# but the notebook's own cell-3 dict is the same ground truth the (1,xsens)
+# fix relied on, so these are trusted on that basis.)
 SELECTED_FILE_NAMES = {
     (1, "openearable"): "group_1_openearable_labeled.csv",
-    (1, "xsens"): "group_1_xsens_labeled.csv",
+    (1, "xsens"): "group_1_xsens_labeled_shifted_by_last10_peak.csv",
     (1, "optitrack"): "group_1_optitrack_labeled.csv",
 
     (2, "openearable"): "group_2_openearable_labeled.csv",
     (2, "xsens"): "group_2_xsens_labeled.csv",
     (2, "optitrack"): "group_2_optitrack_labeled.csv",
 
-    (3, "openearable"): "group_3_openearable_labeled.csv",
+    (3, "openearable"): "group_3_openearable_labeled_shifted_by_sync_peak.csv",
     (3, "xsens"): "group_3_xsens_labeled.csv",
     (3, "optitrack"): "group_3_optitrack_labeled.csv",
 
     (5, "openearable"): "group_5_openearable_labeled.csv",
-    (5, "xsens"): "group_5_xsens_labeled.csv",
+    (5, "xsens"): "group_5_xsens_labeled_shifted_by_clap_sync_peak.csv",
     (5, "optitrack"): "group_5_optitrack_labeled.csv",
 
     (6, "openearable"): "group_6_openearable_labeled.csv",
-    (6, "xsens"): "group_6_xsens_labeled_cleaned.csv",
+    (6, "xsens"): "group_6_xsens_labeled_cleaned_SHIFTED.csv",
     (6, "optitrack"): "group_6_optitrack_labeled.csv",
 
     (7, "openearable"): "group_7_openearable_labeled_SHIFTED.csv",

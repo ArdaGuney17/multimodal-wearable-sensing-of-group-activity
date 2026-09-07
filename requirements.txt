@@ -1,13 +1,16 @@
-# Pinned loosely for now — will tighten once ported code confirms exact versions used originally.
-numpy>=1.26
-pandas>=2.1
-scipy>=1.11
-scikit-learn>=1.3
-torch>=2.1
-matplotlib>=3.8
-pyyaml>=6.0
-tqdm>=4.66
-joblib>=1.3
-pyarrow>=14.0
-requests>=2.31
-hmmlearn>=0.3  # only src/models/task3_hmm_appendix_d.py's GaussianHMM cell needs this
+# Exact-pinned to the versions this reproduction (scripts/reproduce_pipeline.py) was actually
+# validated against, via `pip freeze` in the environment used for that validation run
+# (Python 3.13.3, Windows, CPU-only torch). Re-pin deliberately if you upgrade.
+numpy==2.2.5
+pandas==2.2.3
+scipy==1.15.2
+scikit-learn==1.6.1
+torch==2.14.0+cpu  # CPU wheel; if plain `pip install -r` can't resolve the "+cpu" local version, install
+                    # from the PyTorch CPU index instead: pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+matplotlib==3.10.1
+pyyaml==6.0.3
+tqdm==4.67.1
+joblib==1.4.2
+pyarrow==25.0.1
+requests==2.32.5
+hmmlearn==0.3.3  # only src/models/task3_hmm_appendix_d.py's GaussianHMM cell needs this

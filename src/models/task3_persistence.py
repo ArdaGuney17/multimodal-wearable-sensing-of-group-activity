@@ -23,16 +23,56 @@ handful of (model, history_len, eval_scope) combinations — not a full
 grid — see REPORT_REFERENCE below, used only for the optional
 verification check in run_all().
 
-REPRODUCIBILITY NOTE: the source notebook's label loader reads the *same*
-`rq3_normalized_labels_full.csv` / `rq3_process_label` column used by
-task3_tokens.py, but — despite the notebook's own "7-LABEL" naming
-throughout this cell range — immediately collapses social/task
-conversation into a single "conversation" class (the same MERGE6 used
-everywhere else in Task 3), so the actual label vocabulary evaluated here
-is 6-class, not 7-class. That naming mismatch is in the source notebook
-itself, not introduced by this port; preserved faithfully rather than
-"corrected" to avoid silently changing which column produced the
-published table.
+REPRODUCIBILITY NOTE (corrected 2026-09-06, real-data validation): the
+source notebook's cells 17-18 ("---- 6-LABEL MERGE ----") *do* literally
+collapse social/task conversation into a single "conversation" class
+before evaluation, and an earlier version of this docstring took that at
+face value and claimed Table 8.2's real vocabulary was 6-class despite its
+"7-LABEL" name. That claim was wrong. Real-data validation against
+docs/thesis_reproduction_targets.md's Table 8.2 (see
+data/external/thesis_data/PUBLICATION_TASK3_CORRECTED_FINAL/
+run_table_8_2_persistence_validation.py) shows the published numbers are
+reproduced only when the merge is *not* applied — i.e. the true,
+un-collapsed 7-class `rq3_process_label` vocabulary, matching Table 8.2's
+own literal title ("Window-level 7-label next-window prediction"). With
+the merge applied (this module's behavior prior to this fix): all 9
+REPORT_REFERENCE rows differ from the published table (e.g.
+repeat_current_label/h1/all_windows: 0.8865/0.7578 vs. published
+0.8672/0.7425). With the merge removed: 6 of 9 rows match exactly, and the
+remaining 3 (all sensor-feature logistic-regression models) are off by
+0.0006-0.0041 — consistent with the "unpinned sklearn version" numerical
+drift already documented elsewhere in this reproduction effort for other
+logistic-regression-based tables, not a new discrepancy.
+
+This means cells 17-18 of `task3_FINAL_V2_with_exact_report_reproduction.
+ipynb` — despite being the notebook currently used as this port's
+source-of-truth — do not reproduce the actual historical Table 8.2
+computation for this specific step, the same kind of "current reference
+notebook isn't quite the historical code path" situation already
+documented for Table 8.7 (see task3_grammar.py's "Appendix R vs. Parts
+II-IV" note and docs/table_to_source_mapping.md). Accordingly,
+`load_normalized_labels()` and `select_and_merge_feature_file()` below
+take an `apply_merge6` flag (default True, to preserve the already-exact
+Table 8.3 behavior in task3_segment_forecast.py, which imports
+`load_normalized_labels` from this module and *does* need the merge —
+Table 8.3's own title says "6-label" and it reproduces exactly with the
+merge applied). This module's own `run_all()` explicitly passes
+`apply_merge6=False`.
+
+MERGE6 itself is kept defined (unused by default here) since
+task3_tokens.py and task3_segment_forecast.py both still need their own
+equivalent merge for their own (validated-correct) published tables.
+
+Airtight independent confirmation, not just the A/B statistical test above:
+docs/thesis_reproduction_targets.md §8.2 ("Data representations — four
+representations, exact example counts") lists this module's input as
+representation #1, "Window-level history-aware data, **7-label**
+next-window prediction" (n=2071, 275 transitions — matches this module's
+own real-data numbers with apply_merge6=False exactly), as a *distinct*
+representation from #2, "Segment-level **6-label** data" (244 segments —
+what feeds Table 8.3/task3_segment_forecast.py and task3_tokens.py). The
+thesis text itself draws this exact line between 7-class and 6-class
+representations.
 """
 
 from __future__ import annotations
@@ -107,11 +147,20 @@ def _detect_group_time_cols(columns):
     return group_col, time_col
 
 
-def load_normalized_labels(data_root: str):
-    """Cell 18. Loads the 7-label-named / actually-6-label (after MERGE6)
-    process-label table and detects its group/time columns (metadata
-    JSON first, falls back to name sniffing — mirrors the source
-    notebook exactly)."""
+def load_normalized_labels(data_root: str, apply_merge6: bool = True):
+    """Cell 18 (label-loading half; cells 17/18 in the source notebook).
+    Loads the `rq3_process_label` table and detects its group/time
+    columns (metadata JSON first, falls back to name sniffing — mirrors
+    the source notebook exactly).
+
+    `apply_merge6` defaults to True to preserve the already-validated
+    (real-data exact match) behavior of every OTHER caller of this
+    function — task3_segment_forecast.py's Table 8.3, and the source
+    notebook's own literal cells 17/29, all collapse social/task
+    conversation into "conversation". This module's own run_all() is the
+    one exception: it explicitly passes apply_merge6=False, because real-
+    data validation shows Table 8.2 only reproduces with the true 7-class
+    vocabulary — see this module's docstring "REPRODUCIBILITY NOTE"."""
     norm_dir = os.path.join(data_root, "RQ3_LABEL_NORMALIZATION")
     label_path = os.path.join(norm_dir, "rq3_normalized_labels_full.csv")
     meta_path = os.path.join(norm_dir, "rq3_label_normalization_metadata.json")
@@ -146,7 +195,9 @@ def load_normalized_labels(data_root: str):
 
     labels_df[time_col] = pd.to_numeric(labels_df[time_col], errors="coerce")
     labels_df = labels_df.dropna(subset=[group_col, time_col, label_col]).copy()
-    labels_df[label_col] = labels_df[label_col].astype(str).replace(MERGE6)
+    labels_df[label_col] = labels_df[label_col].astype(str)
+    if apply_merge6:
+        labels_df[label_col] = labels_df[label_col].replace(MERGE6)
     labels_df["__group_key"] = labels_df[group_col].astype(str)
     labels_df["__time_key"] = labels_df[time_col].astype(float).round(3)
     labels_df = labels_df.sort_values(["__group_key", "__time_key"]).reset_index(drop=True)
@@ -180,14 +231,19 @@ def _numeric_feature_count_sample(path: str):
     return n_features, group_col, time_col
 
 
-def select_and_merge_feature_file(data_root: str, labels_df: pd.DataFrame, label_col: str):
+def select_and_merge_feature_file(data_root: str, labels_df: pd.DataFrame, label_col: str, apply_merge6: bool = True):
     """Cell 19. Auto-selects the best-overlapping sensor feature CSV
     (scored by row overlap with the label table's (group, time) keys,
     with a couple of hardcoded preference boosts — same scoring the
-    source notebook uses), merges it against labels_df, and re-applies
-    the 6-label merge to the merged frame's label column. Falls back to
-    label-history-only (no sensor columns) if nothing usable is found.
-    Returns (data, group_col, time_col, feature_score_df)."""
+    source notebook uses), merges it against labels_df, and (by default)
+    re-applies the 6-label merge to the merged frame's label column. Falls
+    back to label-history-only (no sensor columns) if nothing usable is
+    found. `apply_merge6` should match whatever was passed to
+    load_normalized_labels() for the same labels_df — see this module's
+    docstring "REPRODUCIBILITY NOTE" for why Table 8.2's own run_all()
+    passes False here while Table 8.3's caller (task3_segment_forecast.py)
+    needs the default True. Returns (data, group_col, time_col,
+    feature_score_df)."""
     known_paths = [os.path.join(data_root, suffix) for suffix in KNOWN_FEATURE_FILES_SUFFIXES]
 
     recursive = sorted(glob.glob(os.path.join(data_root, "**", "*.csv"), recursive=True))
@@ -265,7 +321,9 @@ def select_and_merge_feature_file(data_root: str, labels_df: pd.DataFrame, label
 
     data[time_col] = pd.to_numeric(data[time_col], errors="coerce")
     data = data.dropna(subset=[group_col, time_col, label_col]).copy()
-    data[label_col] = data[label_col].astype(str).replace(MERGE6)
+    data[label_col] = data[label_col].astype(str)
+    if apply_merge6:
+        data[label_col] = data[label_col].replace(MERGE6)
     data = data.sort_values([group_col, time_col]).reset_index(drop=True)
 
     return data, group_col, time_col, feature_score_df
@@ -536,11 +594,17 @@ def run_all(data_root: str, out_dir: str, history_lens=HISTORY_LENS, max_sensor_
     (summary, predictions, fold_std, comparison, check)."""
     os.makedirs(out_dir, exist_ok=True)
 
-    labels_df, group_col_label, time_col_label, label_col = load_normalized_labels(data_root)
-    print("Loaded labels:", labels_df.shape, "| 6-label distribution:")
+    # apply_merge6=False: see this module's docstring "REPRODUCIBILITY NOTE"
+    # (2026-09-06) -- Table 8.2's own title says "7-label", and real-data
+    # validation confirms the published numbers only reproduce against the
+    # true, un-collapsed 7-class rq3_process_label vocabulary, not the
+    # 6-label social/task-conversation merge the source notebook's cells
+    # 17-18 literally apply.
+    labels_df, group_col_label, time_col_label, label_col = load_normalized_labels(data_root, apply_merge6=False)
+    print("Loaded labels:", labels_df.shape, "| 7-label distribution:")
     print(labels_df[label_col].value_counts())
 
-    data, group_col, time_col, feature_score_df = select_and_merge_feature_file(data_root, labels_df, label_col)
+    data, group_col, time_col, feature_score_df = select_and_merge_feature_file(data_root, labels_df, label_col, apply_merge6=False)
     feature_score_df.to_csv(os.path.join(out_dir, "history_model_feature_file_scores.csv"), index=False)
 
     feature_cols = detect_numeric_sensor_features(data, group_col, time_col, label_col)

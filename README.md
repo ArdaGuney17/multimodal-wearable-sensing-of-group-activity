@@ -93,6 +93,39 @@ python -m src.models.task3               # -> results/tables/table_8_1.csv ... t
 
 (These entry points are the target interface — see the mapping doc for which actually exist yet.)
 
+### Reproducing the pipeline
+
+`scripts/reproduce_pipeline.py` is the actual working orchestrator today — a single entry point
+that runs the full chain (raw sync → cleaning → feature engineering → model training/eval → Task 3)
+against whatever groups currently have the inputs each stage needs, in dependency order. It never
+lets one group's or stage's failure abort the rest: each `(stage, group, item)` gets a status of
+`done` (freshly computed from `--data-root`), `bridged` (a validated real fixture already in this
+repo was used because `--data-root` lacked that input — see the script's own docstring for exactly
+which gaps this covers), `skipped` (input genuinely absent), or `failed` (the real module code
+raised; the actual exception is recorded). A full `pipeline_status.csv` is written to `--out-dir`
+at the end.
+
+```bash
+# See the plan without running anything
+python scripts/reproduce_pipeline.py --dry-run
+
+# Quick check on a few known-good groups/stages
+python scripts/reproduce_pipeline.py --groups 1,2,3 --stages sync,clean --dry-run
+python scripts/reproduce_pipeline.py --groups 1,2,3 --stages sync,clean --out-dir data/processed/pipeline_run_test
+
+# Full run, all groups and stages (classical models only — slow DL/neural grids off by default)
+python scripts/reproduce_pipeline.py --data-root data/raw --out-dir data/processed/pipeline_run
+```
+
+Key flags (see `python scripts/reproduce_pipeline.py --help` for the full list):
+
+- `--data-root` — raw sensor data root, laid out as `{data_root}/group_{g}/{elan,openearable,xsens,optitrack}/...`. Default: `data/raw`.
+- `--out-dir` — where all pipeline output (synced/cleaned files, features, model tables, `pipeline_status.csv`) is written. Default: `data/processed/pipeline_run`.
+- `--groups` — comma-separated group numbers to process. Default: all of `1,2,3,5,6,7,8,9,10` (group 4 is excluded everywhere — camera failure made its annotation unusable).
+- `--stages` — comma-separated stages to run, in order: `sync,clean,features,models,task3`. Default: all five.
+- `--dry-run` — print the plan (which groups/stages/modules would run) and exit without executing anything.
+- `--run-dl` / `--run-neural` — opt in to the slow deep-learning/neural training grids (off by default so a routine run stays in the minutes-not-hours range).
+
 ## Known limitations of this reproduction
 
 - Some intermediate files from the original project were lost; where a stage cannot be exactly

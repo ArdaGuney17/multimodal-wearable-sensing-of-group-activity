@@ -102,8 +102,23 @@ GROUP_SYNC_CONFIG: dict[int, OptitrackSyncConfig] = {
     # Group 10: single-point, human-confirmed OPTITRACK_SYNC_TIME_MANUAL=35.95.
     10: OptitrackSyncConfig(group=10, method="single", sync_time=35.95),
 
-    # Group 9: two-point linear drift correction.
-    9: OptitrackSyncConfig(group=9, method="two_point",
+    # Group 9: two-point linear drift correction. OPTI_TRACK_PROCESSING.ipynb
+    # cell 61 ("GROUP 9 - FAST OPTITRACK LABELING FROM ELAN WITH TWO-POINT
+    # SYNC")'s own find_sync_rows does NOT restrict by tier at all -- it
+    # takes the globally-earliest and globally-latest sync-labeled rows
+    # across every tier. Group 9's real ELAN file has exactly 2 sync rows:
+    # the first on Whole_Group (12.180-15.300s), the last on Participant1
+    # (3594.727-3598.364s) -- see cell 59's own comment ("Beginning sync:
+    # Whole_Group ... / End sync: Participant1 ..."), confirmed empirically
+    # against Group_9_individual_build_renamed.csv. This module's
+    # find_sync_rows *prefers* anchor_tier when it has >=1 match instead of
+    # only when it has all matches, so the dataclass default
+    # anchor_tier="Whole_Group" would wrongly restrict to the single
+    # Whole_Group row and then raise (two_point needs >=2 rows). Setting
+    # anchor_tier to a tier with zero sync-labeled rows in Group 9's real
+    # data forces the intended fallback-to-all-candidates branch, exactly
+    # reproducing the notebook's tier-agnostic global first/last selection.
+    9: OptitrackSyncConfig(group=9, method="two_point", anchor_tier="Participant2",
                             first_sync_time=23.141667, last_sync_time=3606.117833),
 
     # Group 8: two-point linear.

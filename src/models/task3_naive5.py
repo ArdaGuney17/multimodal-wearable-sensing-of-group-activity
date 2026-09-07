@@ -82,7 +82,21 @@ def run_naive5_grammar(T: pd.DataFrame, fcols: list[str], out_dir: str, hist_len
     print(f"tokens: {len(T)} -> {len(T_naive)} (naive-5 subset) | groups: {sorted(T_naive['group'].map(_gid).unique())}")
 
     rows, fold_rows = [], []
-    task3_grammar.run_ngram_backoff(T_naive, rows, fold_rows, hist_lens=hist_lens)
+    # group_as_text=False (2026-09-06 bug fix, real-data validation): the
+    # opposite of task3_grammar.py's own default, which Table 8.7's
+    # full-9-group cohort genuinely needs (see that module's docstring).
+    # For the naive-5 subset, text-sorting the 5 group ids as strings
+    # ('10','2','3','5','6') changes the back-off Counter's training-group
+    # insertion order specifically for the G6-held-out fold (only fold
+    # where the naive-5 group values' text vs. int sort order differs),
+    # flipping most_common() tie-breaks and shifting every ngram_backoff_h*
+    # row's G6 macro-F1 by ~0.012-0.013 vs. the published Table 8.8 value.
+    # With group_as_text=False, G6 reproduces published exactly at all 4
+    # history lengths and G2/G3/G5/G10 are unaffected (verified identical
+    # to 4 decimals either way) -- see task3_grammar.run_ngram_backoff's
+    # own docstring and docs/table_to_source_mapping.md's "naive-5 rerun"
+    # row for the full A/B evidence.
+    task3_grammar.run_ngram_backoff(T_naive, rows, fold_rows, hist_lens=hist_lens, group_as_text=False)
     fold_df = pd.DataFrame(fold_rows)
 
     out_rows = []
@@ -110,8 +124,30 @@ def run_naive5_persistence(data_root: str, out_dir: str) -> pd.DataFrame:
     table to the 5 naive groups and reruns task3_persistence's
     history_len=1 comparison (only repeat-current and no-self n-gram are
     needed for Table 8.8's 3 lower-block rows)."""
-    labels_df, _, _, label_col = task3_persistence.load_normalized_labels(data_root)
-    data, group_col, time_col, _ = task3_persistence.select_and_merge_feature_file(data_root, labels_df, label_col)
+    # apply_merge6=True (kept explicit, NOT False): task3_persistence.py's
+    # own run_all() (Table 8.2, full cohort) needs apply_merge6=False
+    # because that table's own real-data validation only reproduces
+    # against the true 7-class rq3_process_label vocabulary (see that
+    # module's "REPRODUCIBILITY NOTE"). It is tempting to assume Table
+    # 8.8's lower block -- described as "rerunning" that same Appendix A
+    # pipeline on a 5-group subset -- needs the same apply_merge6=False.
+    # Real-data validation shows that assumption is WRONG for this table:
+    # with apply_merge6=False the naive-5 history-example table has 118
+    # transitions, but docs/thesis_reproduction_targets.md's own prose
+    # states the naive subset has "111 transitions in 942 ... examples" --
+    # a number reproduced bit-exactly only with apply_merge6=True (6-class
+    # MERGE6 collapse), which also reproduces 3 of 5 groups'
+    # repeat_current_all_windows macro-F1 exactly (G3, G5, G6), vs. 0 of 5
+    # exact under apply_merge6=False. See
+    # data/external/thesis_data/PUBLICATION_TASK3_CORRECTED_FINAL/
+    # run_table_8_8_naive5_validation.py and
+    # docs/table_to_source_mapping.md's "naive-5 rerun" row for the full
+    # A/B comparison. So Table 8.8's lower block apparently used the
+    # 6-class vocabulary despite Table 8.2 (the full-cohort version of the
+    # same pipeline) needing the 7-class one -- an inconsistency in the
+    # original thesis computation, not a bug in this port.
+    labels_df, _, _, label_col = task3_persistence.load_normalized_labels(data_root, apply_merge6=True)
+    data, group_col, time_col, _ = task3_persistence.select_and_merge_feature_file(data_root, labels_df, label_col, apply_merge6=True)
 
     naive_mask = data[group_col].map(_gid).isin(NAIVE_GROUPS)
     data_naive = data.loc[naive_mask].reset_index(drop=True)
@@ -128,10 +164,34 @@ def run_naive5_persistence(data_root: str, out_dir: str) -> pd.DataFrame:
     predictions["group_id"] = predictions["group"].map(_gid)
 
     def _per_group_macro_f1(mask, model_col):
+        # Bug fix (2026-09-06, real-data validation): each held-out group's
+        # macro-F1 must be scored against that GROUP'S OWN locally-occurring
+        # label set (the union of its y_true and its predictions) -- NOT the
+        # `all_labels` vocabulary pooled across all 5 naive groups. Passing
+        # the pooled vocabulary silently scores 0 for any class this
+        # specific group never actually has (e.g. G2 never has "merging",
+        # G10 never has "inspection"), which artificially drags that
+        # group's macro-F1 down even though its own predictions are
+        # correct. Confirmed empirically: G2's repeat_current_all_windows
+        # macro-F1 is 0.4877 with the local label set vs. 0.4065 with the
+        # pooled one -- the published Table 8.8 value is 0.488, an exact
+        # match only for the local computation (same for G10: local=0.7588
+        # vs. published 0.759, pooled=0.6324). G3/G5/G6 already contain
+        # every naive-5 class in their own windows, so local == pooled for
+        # them and they were unaffected either way -- which is exactly why
+        # only G2/G10 showed this discrepancy. This matches sklearn's own
+        # f1_score default (average="macro" with no explicit `labels`
+        # auto-derives the label set from that call's own y_true/y_pred),
+        # i.e. the natural per-group implementation, rather than the
+        # cross-group-consistent `labels=all_labels` this function
+        # previously (incorrectly) reused from the pooled full-cohort
+        # scoring convention. See docs/table_to_source_mapping.md's
+        # "naive-5 rerun" row for the full A/B evidence.
         subset = predictions.loc[mask]
         out = {}
         for g, gdf in subset.groupby("group_id"):
-            out[g] = task3_persistence.score_predictions(gdf["y_true"], gdf[model_col], model_col, "n/a", 1, all_labels)["macro_f1"]
+            local_labels = sorted(set(gdf["y_true"].astype(str).unique()) | set(gdf[model_col].astype(str).unique()))
+            out[g] = task3_persistence.score_predictions(gdf["y_true"], gdf[model_col], model_col, "n/a", 1, local_labels)["macro_f1"]
         return out
 
     all_mask = np.ones(len(predictions), dtype=bool)

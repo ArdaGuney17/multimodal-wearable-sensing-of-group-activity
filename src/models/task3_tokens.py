@@ -20,11 +20,34 @@ notebook on a normal run — an earlier "Task 3 CORRECTED_FINAL" notebook (not
 among the 3 provided for this port) had already produced a verified token
 table, and this notebook's own cell 6 just copied it in and skipped straight
 to reloading. The from-scratch build path below (`load_six_label_windows` /
-`build_fullstat_tokens`) is real, executable code, but — as far as we know —
-was never the path that actually produced the published Table 8.x numbers.
-Treat results from a from-scratch build as **unverified** until cross-checked
-against docs/thesis_reproduction_targets.md's exact token counts (244 tokens,
-9 groups, 6 classes — see get_or_build_tokens()'s sanity check).
+`build_fullstat_tokens`) is real, executable code, and — as far as we know —
+was never independently confirmed to be the path that actually produced the
+original published Table 8.x numbers.
+
+UPDATE (2026-09-05, Chapter 8 pilot validation): this from-scratch path was
+run for real against `data/external/thesis_data/RQ3_LABEL_NORMALIZATION/
+rq3_normalized_labels_full.csv` (label source) + `data/external/thesis_data/
+INTERACTION_ENG3/interaction_eng3_features.csv` (sensor-feature source,
+itself already validated exact from raw model_ready data by
+`src/features/eng3_recognition_labels.py`'s `build_eng3_grid` — see
+docs/session_2026-09-05_autonomous_progress.md) and diffed row-by-row,
+column-by-column against the official
+`PUBLICATION_TASK3_CORRECTED_FINAL/activity_tokens_6label_fullstat.csv`.
+Result for Group 1: **exact match, 15/15 rows, 340/340 columns, 0 value
+mismatches at 1e-6 tolerance** (see
+`data/external/thesis_data/RAW_VALIDATION_FEATURES/
+run_group1_task3_tokens_validation.py`). All 9 groups together also
+reproduce the expected (244 tokens, 9 groups, 6 classes) shape used by
+`get_or_build_tokens()`'s sanity check below. `feature_cols` (duration + 336
+per-channel stats, excluding group/label/start_time) is 337-dimensional,
+matching the source notebook's own "337-dimensional" markdown claim exactly
+— that claim is confirmed, not stale. This does not prove this exact code
+path is bit-for-bit what originally produced the historical Table 8.x
+numbers (that provenance question is unresolved either way), but it does
+confirm the ported mechanism is correct and fully reproducible from the
+already-validated upstream artifacts, for Group 1 at least. Not yet
+independently re-diffed per-group for groups 2/3/5/6/7/8/9/10 (only the
+aggregate shape was checked for those).
 """
 
 from __future__ import annotations

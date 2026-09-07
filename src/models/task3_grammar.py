@@ -97,11 +97,32 @@ def _prepare_text_group_tokens(T: pd.DataFrame) -> pd.DataFrame:
     return T.assign(group=T["group"].astype(str))
 
 
-def run_ngram_backoff(T: pd.DataFrame, rows_out: list, fold_rows_out: list, hist_lens=(1, 2, 3, 5)):
+def run_ngram_backoff(T: pd.DataFrame, rows_out: list, fold_rows_out: list, hist_lens=(1, 2, 3, 5), group_as_text: bool = True):
     """N-gram Markov back-off over token history, orders in `hist_lens`. Uses
     the last h token labels (not raw windows), with back-off to shorter
-    contexts when the exact context was unseen in training."""
-    T = _prepare_text_group_tokens(T)
+    contexts when the exact context was unseen in training.
+
+    `group_as_text` controls the group-dtype/iteration-order tie-break
+    documented in the module docstring (default True preserves Table 8.7's
+    already-verified-exact full-9-group behavior). Table 8.8's naive-5
+    rerun (task3_naive5.py) needs the OPPOSITE: real-data validation
+    (2026-09-06) found text order's lexicographic sort of the 5-group
+    naive subset {'10','2','3','5','6'} changes which training group is
+    inserted first into the back-off Counter tables whenever G6 is the
+    held-out fold (training groups {2,3,5,10} sort as '10','2','3','5' as
+    text vs. 2,3,5,10 as int), which flips tie-breaks in
+    `Counter.most_common()` for G6's predictions specifically -- and ONLY
+    G6's, since it's the only naive-5 fold where the text/int sort order
+    of the *training* groups actually differs in relative order. With
+    `group_as_text=False` (int order), G6 reproduces the published Table
+    8.8 macro-F1 exactly at all 4 history lengths (h=1: 0.1212 vs
+    published 0.121; h=2: 0.3657 vs 0.366; h=3: 0.1879 vs 0.188; h=5:
+    0.2045 vs 0.205), while G2/G3/G5/G10 are numerically IDENTICAL between
+    the two settings (confirmed to 4 decimals) -- so this flag is a
+    strict improvement for Table 8.8 with zero risk to the other 4
+    groups. See docs/table_to_source_mapping.md's "naive-5 rerun" row for
+    the full A/B evidence."""
+    T = _prepare_text_group_tokens(T) if group_as_text else T.assign(group=T["group"])
     classes = sorted(T["label"].unique())
     cls2i = {c: i for i, c in enumerate(classes)}
     groups = T["group"].values
