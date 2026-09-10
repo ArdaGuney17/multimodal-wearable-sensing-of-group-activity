@@ -37,8 +37,8 @@ methodology, and every target number are documented in
 ```
 data/
   raw/          # Raw per-group sensor recordings + ELAN annotations. NOT committed to git —
-                 # archived on Zenodo (see docs/data_provenance.md) and pulled locally by
-                 # `python -m src.data.download`.
+                 # hosted on Google Drive for now, eventually Zenodo (see "Data" section below
+                 # and docs/data_provenance.md) — pulled locally by `python -m src.data.download`.
   processed/    # Synced, windowed, feature-engineered outputs. NOT committed (.gitignore) —
                  # produced by running src/preprocessing and src/features.
   external/     # Any third-party reference data, if needed.
