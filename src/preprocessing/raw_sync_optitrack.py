@@ -121,11 +121,26 @@ GROUP_SYNC_CONFIG: dict[int, OptitrackSyncConfig] = {
     9: OptitrackSyncConfig(group=9, method="two_point", anchor_tier="Participant2",
                             first_sync_time=23.141667, last_sync_time=3606.117833),
 
-    # Group 8: two-point linear.
+    # Group 8: two-point linear. OPTI_TRACK_PROCESSING_ANALYSIS.md's per-group
+    # table (CELL 63-65 / #54-56, "GROUP 8") gives OPTITRACK_FIRST_SYNC_TIME=
+    # 111.125 / OPTITRACK_LAST_SYNC_TIME=2312.608333 verbatim -- matches
+    # below exactly, no change needed. Empirically verified against the real
+    # Group_8_individual_build_renamed.csv (RAW_VALIDATION session, 2026-09-07):
+    # exactly 2 sync-like rows exist, BOTH on tier Whole_Group
+    # (123.381-127.476s and 2325.546-2328.636s) -- so unlike Group 9, no
+    # anchor_tier override is needed; the dataclass default
+    # anchor_tier="Whole_Group" already selects both rows directly (same
+    # situation as Group 7, see below).
     8: OptitrackSyncConfig(group=8, method="two_point",
                             first_sync_time=111.125, last_sync_time=2312.608333),
 
-    # Group 7: two-point linear.
+    # Group 7: two-point linear. OPTI_TRACK_PROCESSING_ANALYSIS.md's per-group
+    # table (CELL 67-69 / #57-59) gives OPTITRACK_FIRST_SYNC_TIME=71.119 /
+    # OPTITRACK_LAST_SYNC_TIME=2977.631667 verbatim -- matches below exactly.
+    # Empirically verified against the real Group_7_individual_build_renamed
+    # .csv (RAW_VALIDATION session, 2026-09-07): exactly 2 sync-like rows
+    # exist, BOTH on tier Whole_Group (69.430-72.808s and
+    # 2974.818-2979.273s) -- no anchor_tier override needed, unlike Group 9.
     7: OptitrackSyncConfig(group=7, method="two_point",
                             first_sync_time=71.119, last_sync_time=2977.631667),
 

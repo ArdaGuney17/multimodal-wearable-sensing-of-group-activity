@@ -46,6 +46,74 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-07 — OptiTrack Groups 7 and 8: raw motion-capture data downloaded, validated — clean exact PASS on both, zero code changes. This was the LAST real gap in the raw-sync validation sweep (OE/Xsens done for 1,2,3,5,6,7,8,9,10; OptiTrack now also done for all 9 groups).
+Only ELAN files existed beforehand for these two groups (`RAW_VALIDATION/group_{7,8}_optitrack/group_{7,8}/elan/Group_{7,8}_individual_build_renamed.csv`) — the raw OptiTrack motion-capture data had never been downloaded for either.
+
+**Config check first, as instructed.** Group 7's `GROUP_SYNC_CONFIG[7]` (`method="two_point"`,
+`first_sync_time=71.119`, `last_sync_time=2977.631667`) was already flagged correct in a prior
+session. Cross-checked Group 8's config against `OPTI_TRACK_PROCESSING_ANALYSIS.md`'s per-group
+table (CELL 63-65/#54-56, "GROUP 8"): `first_sync_time=111.125`, `last_sync_time=2312.608333` —
+matches the existing `GROUP_SYNC_CONFIG[8]` verbatim. Then empirically checked both groups' real
+ELAN files directly (`Group_7_individual_build_renamed.csv` / `Group_8_individual_build_renamed.csv`)
+for sync-row tier placement, the same check that caught Group 9's real anchor_tier bug: **both
+groups have exactly 2 sync-labeled rows, and for BOTH groups both rows sit on the same
+`Whole_Group` tier** (Group 7: 69.430-72.808s and 2974.818-2979.273s; Group 8: 123.381-127.476s
+and 2325.546-2328.636s) — so, unlike Group 9, the dataclass default `anchor_tier="Whole_Group"`
+already selects both rows correctly for both groups. **No config or code changes needed for either
+group.** Added verification comments to `GROUP_SYNC_CONFIG[7]`/`[8]` in `raw_sync_optitrack.py`
+documenting this (previously only had terse one-line comments).
+
+**File-selection ambiguity resolved before downloading anything**, per task instructions: Group 7's
+Drive OptiTrack folder has multiple similarly-named candidates (`_take_N_manual_stitched_raw`,
+`_smoothed`, `_cleaned_combined_240hz`, `_labeled`, `_model_ready` variants). Checked
+`raw_sync_optitrack.py`'s own `combined_path()` helper plus Group 9's already-working
+`RAW_VALIDATION/group_9_optitrack/group_9/optitrack/optitrack_final/` directory (from
+`run_group9_optitrack_sync_validation.py`, which passed) — confirmed the module's expected INPUT
+is specifically `group_{g}_optitrack_cleaned_combined_240hz.csv` (the notebook's own
+post-tracklet-stitching, pre-sync combined file), not any of the other variants. Cross-checked
+against `OPTI_TRACK_PROCESSING_ANALYSIS.md`'s per-group table, which confirms the same file as
+each group's sync-cell input. Searched Drive by that exact filename for groups 7 and 8 — each
+returned exactly ONE unambiguous match, resolving the stated ambiguity:
+- `group_7_optitrack_cleaned_combined_240hz.csv` — 156,278,411 bytes, fileId `1TT2h26BNtB53O_cO78U3tnJjxYHCdBnp`
+- `group_8_optitrack_cleaned_combined_240hz.csv` — 160,013,352 bytes, fileId `1WS5tLfnnJwLPd2wnp896Z5owj5Iyn5cf`
+
+Downloaded both via the established Chrome `uc?id=...&export=download` workaround (real logged-in
+Chrome, `Browser 1` confirmed connected via `list_connected_browsers`); both landed in Downloads at
+their exact expected byte sizes and were moved into
+`RAW_VALIDATION/group_{7,8}_optitrack/group_{7,8}/optitrack/optitrack_final/`, mirroring Group 9's
+directory structure exactly. Disk check before downloading: 33GB free (later 29GB after both
+~150MB files) — comfortable throughout, well above the earlier-session low-disk scares.
+
+**Wrote `run_group7_optitrack_sync_validation.py`** (found already present, apparently written by a
+concurrent/prior agent this session, byte-for-byte matching the exact file this task needed —
+verified its constants against the just-downloaded file and ran it unmodified) and
+**`run_group8_optitrack_sync_validation.py`** (did not exist yet — written from scratch, following
+`run_group9_optitrack_sync_validation.py`'s exact convention: byte-verify inputs, sanity-check
+config + empirical tier check, in-memory `apply_sync`+`fast_assign_labels` (avoiding a large disk
+write), re-derive model_ready via `global_cleaning.py`'s own functions, compare column-by-column
+against the real fixture keyed on (take, frame)). Both real fixtures
+(`RAW_VALIDATION_FEATURES/group_{7,8}/group_{7,8}_optitrack_model_ready.csv`, 403,569,007 and
+331,828,675 bytes respectively) were already present on disk from earlier feature-engineering
+validation work — not re-downloaded.
+
+**Ran both scripts synchronously, real results:**
+- **Group 7: EXACT PASS.** 709,393/709,393 rows matched by (take, frame) join key (real and
+  reconstructed shapes both exactly (709393, 45)). All 45 columns present on both sides (0 columns
+  only-in-real, 0 only-in-reconstructed). **0 of 41 compared columns had any mismatch.**
+  alignment_a=0.9997983263563048, alignment_b=0.014342827865959862.
+- **Group 8: EXACT PASS.** 549,591/549,591 rows matched by (take, frame) join key (real and
+  reconstructed shapes both exactly (549591, 45)). All 45 columns present on both sides. **0 of 41
+  compared columns had any mismatch.** alignment_a=1.0000813846724679, alignment_b=14.294456128272003.
+
+Per-column mismatch reports written to `group{7,8}_optitrack_sync_validation_column_report.csv` in
+each group's `RAW_VALIDATION/group_{7,8}_optitrack/` directory (both all-zero). No bugs found, no
+code changes made to `raw_sync_optitrack.py` beyond the two documentation comments noted above.
+
+**This closes the OptiTrack raw-sync validation sweep completely**: OptiTrack is now real-data-
+validated for all 9 study groups (1,2,3,5,6,7,8,9,10), matching OE/Xsens's already-complete
+coverage. `docs/table_to_source_mapping.md`'s "Raw sensor sync & cleaning" row updated with this
+result. Chrome browser tool worked without disconnecting this session — no blocked steps to report.
+
 ### 2026-09-07 — Group 9 raw sync: real bug found+fixed in the shift's sync_mid lookup, fixtures downloaded, validation re-run — clean exact PASS (same fixture-only-column caveat as Groups 7/10)
 Raw files (27: 24 OE + 3 Xsens) had already been placed under `RAW_VALIDATION/group_9/{openearable,xsens}/`
 this session before I started — verified all 27 present. `run_group9_validation.py` also already
