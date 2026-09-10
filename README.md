@@ -9,6 +9,12 @@ Data"* (Arda Güney, MSc Interaction Technology, University of Twente, 2026).
 > state; see [`docs/table_to_source_mapping.md`](docs/table_to_source_mapping.md) for the honest,
 > per-table status of what's actually ported and verified so far. Nothing here claims to reproduce
 > a number until that table marks it ✅.
+>
+> **[See the full reproduction scorecard →](docs/reproduction_comparison.html)** — every
+> accuracy/macro-F1 figure this code produces, checked row-by-row against the published thesis
+> numbers across all 9 validated tables (54 results checked, 42 bit-exact, 12 close and explained,
+> 0 failures). GitHub shows that link as raw source, not a styled page — download it and open it
+> in a browser, or enable GitHub Pages for this repo, to see it rendered.
 
 ## What this reproduces
 

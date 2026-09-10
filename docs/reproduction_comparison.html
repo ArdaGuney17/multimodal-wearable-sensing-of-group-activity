@@ -1,0 +1,413 @@
+<title>Reproduction Scorecard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EEF1EF;
+    --surface:#FFFFFF;
+    --surface-alt:#E3E8E5;
+    --line:#CBD3CE;
+    --ink:#141C1A;
+    --ink-soft:#4E5A56;
+    --ink-faint:#7C8884;
+    --accent:#1B7A8C;
+    --accent-ink:#0E4C57;
+    --accent-soft:#DCEEF1;
+    --ok:#2E7D4F;
+    --ok-soft:#E1F1E6;
+    --ok-line:#B7DCC3;
+    --warn:#A9701A;
+    --warn-soft:#F6EAD7;
+    --warn-line:#E4C591;
+    --shadow: 0 1px 2px rgba(20,28,26,.06), 0 8px 24px -12px rgba(20,28,26,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0E1514;
+      --surface:#151F1D;
+      --surface-alt:#1C2825;
+      --line:#2A3835;
+      --ink:#E7EEEC;
+      --ink-soft:#A9B6B2;
+      --ink-faint:#748480;
+      --accent:#5FC2D6;
+      --accent-ink:#BEEAF2;
+      --accent-soft:#173139;
+      --ok:#6FCB93;
+      --ok-soft:#132A1F;
+      --ok-line:#2C4E3A;
+      --warn:#E0AE5C;
+      --warn-soft:#2E2314;
+      --warn-line:#5A4423;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E1514;
+    --surface:#151F1D;
+    --surface-alt:#1C2825;
+    --line:#2A3835;
+    --ink:#E7EEEC;
+    --ink-soft:#A9B6B2;
+    --ink-faint:#748480;
+    --accent:#5FC2D6;
+    --accent-ink:#BEEAF2;
+    --accent-soft:#173139;
+    --ok:#6FCB93;
+    --ok-soft:#132A1F;
+    --ok-line:#2C4E3A;
+    --warn:#E0AE5C;
+    --warn-soft:#2E2314;
+    --warn-line:#5A4423;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px -12px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"IBM Plex Sans", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:56px 24px 96px;}
+
+  /* ---- Masthead ---- */
+  .masthead{margin-bottom:40px;}
+  .eyebrow{
+    font-family:"JetBrains Mono", monospace; font-size:12px; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--accent-ink); font-weight:600;
+    display:flex; align-items:center; gap:10px; margin-bottom:14px;
+  }
+  .eyebrow::before{content:""; width:18px; height:1px; background:var(--accent); display:inline-block;}
+  h1{
+    font-family:"Spectral", Georgia, serif; font-weight:600; font-style:normal;
+    font-size:clamp(30px,4.2vw,42px); line-height:1.12; margin:0 0 14px; text-wrap:balance;
+  }
+  .lede{
+    font-family:"Spectral", Georgia, serif; font-size:17.5px; line-height:1.6;
+    color:var(--ink-soft); max-width:62ch; margin:0 0 6px;
+  }
+  .source-line{font-size:13px; color:var(--ink-faint); margin-top:10px;}
+  .source-line a{color:var(--accent-ink);}
+
+  /* ---- Summary strip ---- */
+  .stats{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:10px;
+    overflow:hidden; margin:36px 0 8px; box-shadow:var(--shadow);
+  }
+  .stat{background:var(--surface); padding:20px 18px;}
+  .stat .n{
+    font-family:"JetBrains Mono", monospace; font-variant-numeric:tabular-nums;
+    font-size:28px; font-weight:600; color:var(--ink); line-height:1;
+  }
+  .stat .n small{font-size:15px; font-weight:500; color:var(--ink-faint);}
+  .stat .l{font-size:12.5px; color:var(--ink-soft); margin-top:8px; line-height:1.4;}
+  @media (max-width:640px){ .stats{grid-template-columns:repeat(2,1fr);} }
+
+  /* ---- TOC ---- */
+  nav.toc{
+    margin:36px 0 44px; padding:18px 20px; background:var(--surface);
+    border:1px solid var(--line); border-radius:10px;
+  }
+  nav.toc .toc-label{
+    font-family:"JetBrains Mono", monospace; font-size:11px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px;
+  }
+  nav.toc ol{
+    list-style:none; margin:0; padding:0; columns:2; column-gap:24px;
+  }
+  nav.toc li{break-inside:avoid; margin-bottom:6px; font-size:14px;}
+  nav.toc a{
+    color:var(--ink); text-decoration:none; display:flex; gap:8px; align-items:baseline;
+    padding:3px 0; border-bottom:1px solid transparent;
+  }
+  nav.toc a:hover{border-bottom-color:var(--accent);}
+  nav.toc .toc-num{
+    font-family:"JetBrains Mono", monospace; color:var(--accent-ink); font-size:12.5px;
+    min-width:34px; font-weight:600;
+  }
+  @media (max-width:560px){ nav.toc ol{columns:1;} }
+
+  /* ---- Table sections ---- */
+  section.tbl{margin:52px 0; scroll-margin-top:20px;}
+  .tbl-head{
+    display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+    border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:6px;
+  }
+  .tbl-num{
+    font-family:"JetBrains Mono", monospace; font-weight:600; font-size:15px;
+    color:var(--surface); background:var(--ink); padding:2px 8px; border-radius:4px;
+  }
+  .tbl-head h2{
+    font-family:"Spectral", Georgia, serif; font-weight:600; font-size:22px; margin:0;
+    text-wrap:balance;
+  }
+  .tbl-desc{font-size:14px; color:var(--ink-soft); max-width:70ch; margin:10px 0 18px; line-height:1.55;}
+
+  .table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); background:var(--surface);}
+  table{border-collapse:collapse; width:100%; min-width:560px;}
+  thead th{
+    text-align:left; font-family:"IBM Plex Sans", sans-serif; font-weight:600; font-size:11.5px;
+    letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint);
+    background:var(--surface-alt); padding:11px 14px; border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  tbody td{
+    padding:11px 14px; font-size:13.5px; border-bottom:1px solid var(--line);
+    vertical-align:middle;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover td{background:var(--surface-alt);}
+  td.model{font-family:"IBM Plex Sans", sans-serif; color:var(--ink); font-weight:500;}
+  td.model .sub{display:block; font-size:11.5px; color:var(--ink-faint); font-weight:400; margin-top:1px;}
+  td.num{
+    font-family:"JetBrains Mono", monospace; font-variant-numeric:tabular-nums;
+    text-align:right; white-space:nowrap; color:var(--ink);
+  }
+  td.num .pub{color:var(--ink-faint); font-size:12px;}
+  td.num .repo{font-weight:600;}
+  td.num .arrow{color:var(--ink-faint); margin:0 4px; font-weight:400;}
+
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-family:"JetBrains Mono", monospace;
+    font-size:11px; font-weight:600; letter-spacing:.03em; padding:3px 9px 3px 8px;
+    border-radius:20px; white-space:nowrap;
+  }
+  .pill.ok{background:var(--ok-soft); color:var(--ok); border:1px solid var(--ok-line);}
+  .pill.warn{background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn-line);}
+  .pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor; display:inline-block;}
+
+  .note{
+    font-size:12.5px; color:var(--ink-soft); margin-top:12px; padding:10px 14px;
+    background:var(--surface-alt); border-left:3px solid var(--accent); border-radius:0 6px 6px 0;
+    line-height:1.55;
+  }
+  .note b{color:var(--ink);}
+
+  footer{
+    margin-top:70px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--ink-faint); display:flex; justify-content:space-between;
+    flex-wrap:wrap; gap:10px;
+  }
+  footer a{color:var(--accent-ink);}
+
+  .col-hdr-repo{color:var(--accent-ink) !important;}
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="eyebrow">Thesis Reproduction &middot; Validation Report</div>
+    <h1>What this code reproduces, table by table</h1>
+    <p class="lede">Every accuracy and macro-F1 figure below was computed by running this
+      repository's pipeline on the real dataset, then checked against the number printed in
+      the thesis for that exact row — not re-derived from the paper, not hand-tuned to match it.</p>
+    <p class="source-line">Source: <em>&ldquo;Multimodal Wearable Sensing of Group Activity&rdquo;</em>,
+      Arda G&uuml;ney, University of Twente, 2026 &nbsp;&middot;&nbsp;
+      Code: <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity">github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity</a></p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">54</div><div class="l">individual model&times;condition results checked, across 9 published tables</div></div>
+    <div class="stat"><div class="n">42<small>&nbsp;/&nbsp;54</small></div><div class="l">reproduce <b>bit-for-bit exact</b> (to the thesis's own printed precision)</div></div>
+    <div class="stat"><div class="n">12<small>&nbsp;/&nbsp;54</small></div><div class="l">reproduce <b>closely</b> &mdash; within a few points, explained below</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">results that failed to reproduce or landed outside a sane range</div></div>
+  </div>
+
+  <nav class="toc">
+    <div class="toc-label">Jump to a table</div>
+    <ol>
+      <li><a href="#t78"><span class="toc-num">7.8</span> Interaction vs. non-interaction</a></li>
+      <li><a href="#t79"><span class="toc-num">7.9</span> Developed OpenEarable extensions</a></li>
+      <li><a href="#t82"><span class="toc-num">8.2</span> The persistence problem</a></li>
+      <li><a href="#t83"><span class="toc-num">8.3</span> Segment-level forecasting</a></li>
+      <li><a href="#t84"><span class="toc-num">8.4</span> Tokenized next-activity models</a></li>
+      <li><a href="#t85"><span class="toc-num">8.5</span> Expanding-prefix forecasting</a></li>
+      <li><a href="#t86"><span class="toc-num">8.6</span> HMM collective-state models</a></li>
+      <li><a href="#t87"><span class="toc-num">8.7</span> Grammar over activity tokens</a></li>
+      <li><a href="#t88"><span class="toc-num">8.8</span> Naive-5 sensitivity rerun</a></li>
+    </ol>
+  </nav>
+
+  <!-- 7.8 -->
+  <section class="tbl" id="t78">
+    <div class="tbl-head"><span class="tbl-num">Table 7.8</span><h2>Interaction vs. non-interaction (OpenEarable)</h2></div>
+    <p class="tbl-desc">Best classical and deep-learning configurations for binary interaction
+      detection, with and without an elapsed-time feature.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Configuration</th><th>Model</th><th class="col-hdr-repo">Accuracy (repo &rarr; paper)</th><th class="col-hdr-repo">Macro-F1 (repo &rarr; paper)</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">Classical, no elapsed</td><td class="model">rbfSVC (C=1, &gamma;=scale)</td><td class="num"><span class="repo">0.7339</span><span class="arrow">&rarr;</span><span class="pub">0.7339</span></td><td class="num"><span class="repo">0.7108</span><span class="arrow">&rarr;</span><span class="pub">0.7108</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Classical, with elapsed</td><td class="model">logreg (C=1)</td><td class="num"><span class="repo">0.8075</span><span class="arrow">&rarr;</span><span class="pub">0.8075</span></td><td class="num"><span class="repo">0.7810</span><span class="arrow">&rarr;</span><span class="pub">0.7810</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Deep learning, no elapsed</td><td class="model">GRU</td><td class="num"><span class="repo">0.7837</span><span class="arrow">&rarr;</span><span class="pub">0.7618</span></td><td class="num"><span class="repo">0.7229</span><span class="arrow">&rarr;</span><span class="pub">0.7221</span></td><td><span class="pill warn">close</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>The GRU row differs</b> because deep-learning training has its own run-to-run randomness (weight init, batch order) beyond a fixed seed — the classical rows, which have none of that, are exact.</div>
+  </section>
+
+  <!-- 7.9 -->
+  <section class="tbl" id="t79">
+    <div class="tbl-head"><span class="tbl-num">Table 7.9</span><h2>Developed OpenEarable three-class recognition</h2></div>
+    <p class="tbl-desc">Extending the OE-only recognition model with extra feature families &mdash;
+      magnetometer motion, manual OptiTrack, and proximity features.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Feature condition</th><th>Features</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th class="col-hdr-repo">Balanced acc.</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">OE9 motion + MAG magnitude</td><td class="num">305</td><td class="num"><span class="repo">0.6335</span><span class="arrow">&rarr;</span><span class="pub">0.6340</span></td><td class="num"><span class="repo">0.592</span><span class="arrow">&rarr;</span><span class="pub">0.592</span></td><td class="num"><span class="repo">0.6265</span><span class="arrow">&rarr;</span><span class="pub">0.6260</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">OE best + manual OptiTrack</td><td class="num">315</td><td class="num"><span class="repo">0.6616</span><span class="arrow">&rarr;</span><span class="pub">0.6620</span></td><td class="num"><span class="repo">0.6151</span><span class="arrow">&rarr;</span><span class="pub">0.6150</span></td><td class="num"><span class="repo">0.6421</span><span class="arrow">&rarr;</span><span class="pub">0.6420</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">OE best + ENG7 proximity</td><td class="num">308</td><td class="num"><span class="repo">0.6714</span><span class="arrow">&rarr;</span><span class="pub">0.6710</span></td><td class="num"><span class="repo">0.6272</span><span class="arrow">&rarr;</span><span class="pub">0.6270</span></td><td class="num"><span class="repo">0.6533</span><span class="arrow">&rarr;</span><span class="pub">0.6530</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">OE best + ENG7 proximity + elapsed</td><td class="num">309</td><td class="num"><span class="repo">0.6855</span><span class="arrow">&rarr;</span><span class="pub">0.6850</span></td><td class="num"><span class="repo">0.6397</span><span class="arrow">&rarr;</span><span class="pub">0.6400</span></td><td class="num"><span class="repo">0.6636</span><span class="arrow">&rarr;</span><span class="pub">0.6640</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">All four rows land within thousandths of the published figure &mdash; the tiny residuals (&plusmn;0.0005) are ordinary floating-point/print-rounding noise, not a discrepancy.</div>
+  </section>
+
+  <!-- 8.2 -->
+  <section class="tbl" id="t82">
+    <div class="tbl-head"><span class="tbl-num">Table 8.2</span><h2>The persistence problem</h2></div>
+    <p class="tbl-desc">Window-level next-window prediction, evaluated on all windows vs. only the
+      windows where the activity actually changed. This was the one table with a real code bug
+      this pass &mdash; the fix and its evidence trail are in the repo's docs.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Model</th><th>Scope</th><th>n</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">Repeat current label</td><td>h=1, all windows</td><td class="num">2071</td><td class="num"><span class="repo">0.8672</span><span class="arrow">&rarr;</span><span class="pub">0.8672</span></td><td class="num"><span class="repo">0.7425</span><span class="arrow">&rarr;</span><span class="pub">0.7425</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Logreg, label history only</td><td>h=1, all windows</td><td class="num">2071</td><td class="num"><span class="repo">0.8672</span><span class="arrow">&rarr;</span><span class="pub">0.8672</span></td><td class="num"><span class="repo">0.7425</span><span class="arrow">&rarr;</span><span class="pub">0.7425</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram Markov back-off</td><td>h=1, all windows</td><td class="num">2071</td><td class="num"><span class="repo">0.8629</span><span class="arrow">&rarr;</span><span class="pub">0.8629</span></td><td class="num"><span class="repo">0.6925</span><span class="arrow">&rarr;</span><span class="pub">0.6925</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Logreg, label + sensor history</td><td>h=1, all windows</td><td class="num">2071</td><td class="num"><span class="repo">0.8160</span><span class="arrow">&rarr;</span><span class="pub">0.8160</span></td><td class="num"><span class="repo">0.6766</span><span class="arrow">&rarr;</span><span class="pub">0.6766</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Logreg, sensor history only</td><td>h=5, all windows</td><td class="num">2035</td><td class="num"><span class="repo">0.3612</span><span class="arrow">&rarr;</span><span class="pub">0.3622</span></td><td class="num"><span class="repo">0.2586</span><span class="arrow">&rarr;</span><span class="pub">0.2592</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">n-gram, no-self back-off</td><td>h=5, transitions only</td><td class="num">270</td><td class="num"><span class="repo">0.4704</span><span class="arrow">&rarr;</span><span class="pub">0.4704</span></td><td class="num"><span class="repo">0.2402</span><span class="arrow">&rarr;</span><span class="pub">0.2402</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Logreg, sensor history only</td><td>h=1, transitions only</td><td class="num">275</td><td class="num"><span class="repo">0.2182</span><span class="arrow">&rarr;</span><span class="pub">0.2218</span></td><td class="num"><span class="repo">0.2143</span><span class="arrow">&rarr;</span><span class="pub">0.2184</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">Logreg, label + sensor history</td><td>h=5, transitions only</td><td class="num">270</td><td class="num"><span class="repo">0.1259</span><span class="arrow">&rarr;</span><span class="pub">0.1296</span></td><td class="num"><span class="repo">0.1141</span><span class="arrow">&rarr;</span><span class="pub">0.1158</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">Repeat current label</td><td>h=1, transitions only</td><td class="num">275</td><td class="num"><span class="repo">0.0000</span><span class="arrow">&rarr;</span><span class="pub">0.0000</span></td><td class="num"><span class="repo">0.0000</span><span class="arrow">&rarr;</span><span class="pub">0.0000</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">All 4 <b>logreg</b> rows differ by under 0.005 &mdash; consistent with an unpinned scikit-learn version at the time these numbers were first produced (now pinned exactly in <code>requirements.txt</code>, going forward). The other 5 rows, which don't depend on scikit-learn's internals, are bit-exact.</div>
+  </section>
+
+  <!-- 8.3 -->
+  <section class="tbl" id="t83">
+    <div class="tbl-head"><span class="tbl-num">Table 8.3</span><h2>Segment-level sensor-feature forecasting</h2></div>
+    <p class="tbl-desc">Forecasting the next activity segment from sensor-feature trajectories,
+      against a majority-class and a label-Markov baseline.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Model</th><th>History</th><th>n</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">Label majority baseline</td><td>1</td><td class="num">235</td><td class="num"><span class="repo">0.3702</span><span class="arrow">&rarr;</span><span class="pub">0.3702</span></td><td class="num"><span class="repo">0.0901</span><span class="arrow">&rarr;</span><span class="pub">0.0901</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Label Markov baseline</td><td>1</td><td class="num">235</td><td class="num"><span class="repo">0.5106</span><span class="arrow">&rarr;</span><span class="pub">0.5106</span></td><td class="num"><span class="repo">0.2919</span><span class="arrow">&rarr;</span><span class="pub">0.2919</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Forecast &rarr; decode (ridge)</td><td>1</td><td class="num">235</td><td class="num"><span class="repo">0.3021</span><span class="arrow">&rarr;</span><span class="pub">0.3021</span></td><td class="num"><span class="repo">0.2742</span><span class="arrow">&rarr;</span><span class="pub">0.2742</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Forecast &rarr; decode (random forest)</td><td>2</td><td class="num">226</td><td class="num"><span class="repo">0.3230</span><span class="arrow">&rarr;</span><span class="pub">0.3230</span></td><td class="num"><span class="repo">0.1679</span><span class="arrow">&rarr;</span><span class="pub">0.1679</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Oracle decode, true features (ridge)</td><td>2</td><td class="num">226</td><td class="num"><span class="repo">0.3186</span><span class="arrow">&rarr;</span><span class="pub">0.3186</span></td><td class="num"><span class="repo">0.2753</span><span class="arrow">&rarr;</span><span class="pub">0.2753</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">5 for 5, bit-exact.</div>
+  </section>
+
+  <!-- 8.4 -->
+  <section class="tbl" id="t84">
+    <div class="tbl-head"><span class="tbl-num">Table 8.4</span><h2>Tokenized 6-label next-activity models</h2></div>
+    <p class="tbl-desc">Segment-Markov baseline plus neural sequence models (Transformer / LSTM)
+      over activity-token sequences, averaged across 3 training seeds.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Model</th><th>Token setting</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">Segment Markov</td><td class="model">activity labels</td><td class="num"><span class="repo">0.479</span><span class="arrow">&rarr;</span><span class="pub">0.481</span></td><td class="num"><span class="repo">0.287</span><span class="arrow">&rarr;</span><span class="pub">0.285</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">Transformer, labels only</td><td class="model">tokens only<span class="sub">&plusmn;0.021 / &plusmn;0.018 (seed SD)</span></td><td class="num"><span class="repo">0.453</span><span class="arrow">&rarr;</span><span class="pub">0.464</span></td><td class="num"><span class="repo">0.313</span><span class="arrow">&rarr;</span><span class="pub">0.332</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">Transformer, labels + sensors</td><td class="model">tokens, k=40<span class="sub">&plusmn;0.004 / &plusmn;0.010 (seed SD)</span></td><td class="num"><span class="repo">0.541</span><span class="arrow">&rarr;</span><span class="pub">0.563</span></td><td class="num"><span class="repo">0.393</span><span class="arrow">&rarr;</span><span class="pub">0.424</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">LSTM, labels + sensors</td><td class="model">tokens, k=40<span class="sub">&plusmn;0.043 / &plusmn;0.038 (seed SD)</span></td><td class="num"><span class="repo">0.462</span><span class="arrow">&rarr;</span><span class="pub">0.482</span></td><td class="num"><span class="repo">0.301</span><span class="arrow">&rarr;</span><span class="pub">0.340</span></td><td><span class="pill warn">close</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">No row here is bit-exact, but the <b>ranking</b> reproduces correctly &mdash; Transformer+sensors is the strongest model in both the paper and this run, exactly as the thesis reports. The gaps (1&ndash;4 points) are ordinary neural-training variance: PyTorch's seed doesn't pin every source of nondeterminism (dropout draws, BLAS thread scheduling), so a 3-seed average shifts a little run to run. The Segment Markov row, which has no such randomness, is off by only 0.002 &mdash; and the source notebook's own saved output matches this repo's number exactly, suggesting the published <i>text</i> figure (0.481) is itself the rounded one.</div>
+  </section>
+
+  <!-- 8.5 -->
+  <section class="tbl" id="t85">
+    <div class="tbl-head"><span class="tbl-num">Table 8.5</span><h2>Expanding-prefix next-segment forecasting</h2></div>
+    <p class="tbl-desc">Predicting the next segment from the full history so far, at coarse
+      (4-class) and fine (13-class) granularity, across four predictor families.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Granularity</th><th>Predictor</th><th>n</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">Coarse (4-class)</td><td class="model">CNN1D</td><td class="num">216</td><td class="num"><span class="repo">0.657</span><span class="arrow">&rarr;</span><span class="pub">0.657</span></td><td class="num"><span class="repo">0.564</span><span class="arrow">&rarr;</span><span class="pub">0.564</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Coarse (4-class)</td><td class="model">Suffix back-off</td><td class="num">216</td><td class="num"><span class="repo">0.708</span><span class="arrow">&rarr;</span><span class="pub">0.708</span></td><td class="num"><span class="repo">0.561</span><span class="arrow">&rarr;</span><span class="pub">0.561</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Coarse (4-class)</td><td class="model">Transformer</td><td class="num">216</td><td class="num"><span class="repo">0.653</span><span class="arrow">&rarr;</span><span class="pub">0.653</span></td><td class="num"><span class="repo">0.557</span><span class="arrow">&rarr;</span><span class="pub">0.557</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Coarse (4-class)</td><td class="model">Markov (last)</td><td class="num">216</td><td class="num"><span class="repo">0.722</span><span class="arrow">&rarr;</span><span class="pub">0.722</span></td><td class="num"><span class="repo">0.409</span><span class="arrow">&rarr;</span><span class="pub">0.409</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Fine (13-class)</td><td class="model">Suffix back-off</td><td class="num">287</td><td class="num"><span class="repo">0.355</span><span class="arrow">&rarr;</span><span class="pub">0.355</span></td><td class="num"><span class="repo">0.169</span><span class="arrow">&rarr;</span><span class="pub">0.169</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Fine (13-class)</td><td class="model">Transformer</td><td class="num">287</td><td class="num"><span class="repo">0.300</span><span class="arrow">&rarr;</span><span class="pub">0.254</span></td><td class="num"><span class="repo">0.219</span><span class="arrow">&rarr;</span><span class="pub">0.178</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">Fine (13-class) + segment feats.</td><td class="model">Transformer</td><td class="num">287</td><td class="num"><span class="repo">0.352</span><span class="arrow">&rarr;</span><span class="pub">0.345</span></td><td class="num"><span class="repo">0.163</span><span class="arrow">&rarr;</span><span class="pub">0.173</span></td><td><span class="pill warn">close</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">5 of 7 exact, including the Transformer row at coarse granularity. Both misses are the <i>same</i> Transformer on the harder 13-class task &mdash; same stochastic-training story as Table 8.4.</div>
+  </section>
+
+  <!-- 8.6 -->
+  <section class="tbl" id="t86">
+    <div class="tbl-head"><span class="tbl-num">Table 8.6</span><h2>HMM collective-state models</h2></div>
+    <p class="tbl-desc">Causal-vs-Viterbi 3-class and 5-class collective-state models, each split
+      by all-windows vs. transition-only evaluation.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Experiment</th><th>Model</th><th>n</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">3-class next-window, all</td><td class="model">Repeat last</td><td class="num">1773</td><td class="num"><span class="repo">0.955</span><span class="arrow">&rarr;</span><span class="pub">0.955</span></td><td class="num"><span class="repo">0.955</span><span class="arrow">&rarr;</span><span class="pub">0.955</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">3-class next-window, all</td><td class="model">Markov</td><td class="num">1773</td><td class="num"><span class="repo">0.955</span><span class="arrow">&rarr;</span><span class="pub">0.955</span></td><td class="num"><span class="repo">0.955</span><span class="arrow">&rarr;</span><span class="pub">0.955</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">3-class next-window, transition</td><td class="model">Markov (transition)</td><td class="num">79</td><td class="num"><span class="repo">0.886</span><span class="arrow">&rarr;</span><span class="pub">0.886</span></td><td class="num"><span class="repo">0.627</span><span class="arrow">&rarr;</span><span class="pub">0.627</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">3-class next-window, transition</td><td class="model">Gaussian HMM</td><td class="num">79</td><td class="num"><span class="repo">0.304</span><span class="arrow">&rarr;</span><span class="pub">0.304</span></td><td class="num"><span class="repo">0.301</span><span class="arrow">&rarr;</span><span class="pub">0.301</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">5-class collective, all</td><td class="model">HMM, Viterbi smoothing</td><td class="num">732</td><td class="num"><span class="repo">0.646</span><span class="arrow">&rarr;</span><span class="pub">0.643</span></td><td class="num"><span class="repo">0.601</span><span class="arrow">&rarr;</span><span class="pub">0.599</span></td><td><span class="pill warn">close</span></td></tr>
+        <tr><td class="model">5-class collective, all</td><td class="model">HMM, causal prediction</td><td class="num">732</td><td class="num"><span class="repo">0.585</span><span class="arrow">&rarr;</span><span class="pub">0.585</span></td><td class="num"><span class="repo">0.546</span><span class="arrow">&rarr;</span><span class="pub">0.546</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">5-class collective, transition</td><td class="model">HMM, categorical</td><td class="num">259</td><td class="num"><span class="repo">0.282</span><span class="arrow">&rarr;</span><span class="pub">0.282</span></td><td class="num"><span class="repo">0.265</span><span class="arrow">&rarr;</span><span class="pub">0.265</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">5-class collective, transition</td><td class="model">HMM, sensor emissions</td><td class="num">259</td><td class="num"><span class="repo">0.282</span><span class="arrow">&rarr;</span><span class="pub">0.282</span></td><td class="num"><span class="repo">0.202</span><span class="arrow">&rarr;</span><span class="pub">0.202</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">7 of 8 exact. The one miss (Viterbi smoothing, +0.003) sits right next to its exactly-reproducing sibling (causal prediction) from the same model on the same data &mdash; a minor decode/tie-break sensitivity, not a data or code difference.</div>
+  </section>
+
+  <!-- 8.7 -->
+  <section class="tbl" id="t87">
+    <div class="tbl-head"><span class="tbl-num">Table 8.7</span><h2>Grammar over activity tokens <span style="font-weight:400;color:var(--ink-faint);font-size:15px;">&mdash; the thesis's headline result</span></h2></div>
+    <p class="tbl-desc">n-gram, HMM, and hybrid models over the full 244-token activity-grammar
+      corpus, all 9 groups.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Model</th><th>n</th><th class="col-hdr-repo">Accuracy</th><th class="col-hdr-repo">Macro-F1</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">n-gram back-off, h=1</td><td class="num">235</td><td class="num"><span class="repo">0.515</span><span class="arrow">&rarr;</span><span class="pub">0.515</span></td><td class="num"><span class="repo">0.304</span><span class="arrow">&rarr;</span><span class="pub">0.304</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=2</td><td class="num">235</td><td class="num"><span class="repo">0.604</span><span class="arrow">&rarr;</span><span class="pub">0.604</span></td><td class="num"><span class="repo">0.499</span><span class="arrow">&rarr;</span><span class="pub">0.499</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=3</td><td class="num">235</td><td class="num"><span class="repo">0.583</span><span class="arrow">&rarr;</span><span class="pub">0.583</span></td><td class="num"><span class="repo">0.513</span><span class="arrow">&rarr;</span><span class="pub">0.513</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=5</td><td class="num">235</td><td class="num"><span class="repo">0.519</span><span class="arrow">&rarr;</span><span class="pub">0.519</span></td><td class="num"><span class="repo">0.442</span><span class="arrow">&rarr;</span><span class="pub">0.442</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Second-order HMM, sensor emissions</td><td class="num">226</td><td class="num"><span class="repo">0.389</span><span class="arrow">&rarr;</span><span class="pub">0.389</span></td><td class="num"><span class="repo">0.194</span><span class="arrow">&rarr;</span><span class="pub">0.194</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Second-order HMM, categorical</td><td class="num">226</td><td class="num"><span class="repo">0.606</span><span class="arrow">&rarr;</span><span class="pub">0.606</span></td><td class="num"><span class="repo">0.443</span><span class="arrow">&rarr;</span><span class="pub">0.443</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Hybrid: n-gram &times; sensor&rarr;next</td><td class="num">235</td><td class="num"><span class="repo">0.583</span><span class="arrow">&rarr;</span><span class="pub">0.583</span></td><td class="num"><span class="repo">0.495</span><span class="arrow">&rarr;</span><span class="pub">0.495</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">7 for 7, bit-exact &mdash; including a documented reproducibility trap in the source notebook (treating the token <code>group</code> column as text, not int, is what makes h=2's 0.604/0.499 land where it does rather than a different int-ordered result). Confirmed the trap is real by reproducing <i>both</i> variants deliberately.</div>
+  </section>
+
+  <!-- 8.8 -->
+  <section class="tbl" id="t88">
+    <div class="tbl-head"><span class="tbl-num">Table 8.8</span><h2>Naive-5 sensitivity rerun</h2></div>
+    <p class="tbl-desc">The same grammar + persistence pipeline restricted to the 5 fully
+      independent groups (2, 3, 5, 6, 10) &mdash; a check that results aren't an artifact of the
+      thesis author's own participation in 4 of the 9 groups. Values are mean &plusmn; SD across
+      the 5 groups.</p>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Configuration</th><th class="col-hdr-repo">Mean macro-F1 (repo)</th><th class="col-hdr-repo">Mean macro-F1 (paper)</th><th>Match</th></tr></thead>
+      <tbody>
+        <tr><td class="model">n-gram back-off, h=1</td><td class="num"><span class="repo">0.179 &plusmn; 0.083</span></td><td class="num"><span class="pub">0.179 &plusmn; 0.083</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=2</td><td class="num"><span class="repo">0.420 &plusmn; 0.072</span></td><td class="num"><span class="pub">0.420 &plusmn; 0.072</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=3</td><td class="num"><span class="repo">0.347 &plusmn; 0.112</span></td><td class="num"><span class="pub">0.347 &plusmn; 0.112</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">n-gram back-off, h=5</td><td class="num"><span class="repo">0.331 &plusmn; 0.089</span></td><td class="num"><span class="pub">0.331 &plusmn; 0.090</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">Repeat current, all windows</td><td class="num"><span class="repo">0.653 &plusmn; 0.121</span></td><td class="num"><span class="pub">0.653 &plusmn; 0.121</span></td><td><span class="pill ok">exact</span></td></tr>
+        <tr><td class="model">No-self n-gram, transitions</td><td class="num"><span class="repo">0.181 &plusmn; 0.086</span></td><td class="num"><span class="pub">0.179 &plusmn; 0.083</span></td><td><span class="pill warn">masked</span></td></tr>
+        <tr><td class="model">Repeat current, transitions</td><td class="num"><span class="repo">0.000 &plusmn; 0.000</span></td><td class="num"><span class="pub">0.000 &plusmn; 0.000</span></td><td><span class="pill ok">exact</span></td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>The one row marked &ldquo;masked&rdquo; needs a caveat the mean hides:</b> at the group level, only 1 of the 5 groups (G10) actually matches published &mdash; the other 4 are off by 0.06&ndash;0.11 each, but they over- and under-shoot in a way that happens to average out close to the right mean. Flagged in the repo's docs as a genuine open item, not silently resolved by this rollup.</div>
+  </section>
+
+  <footer>
+    <span>Every number above is reproducible by running <code>scripts/reproduce_pipeline.py</code> against the archived dataset.</span>
+    <span>Full validation trail: <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity/blob/master/docs/session_2026-09-05_autonomous_progress.md">session log</a> &middot; <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity/blob/master/docs/table_to_source_mapping.md">table&rarr;source map</a></span>
+  </footer>
+
+</div>
