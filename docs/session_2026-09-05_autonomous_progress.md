@@ -46,6 +46,54 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-10/11 — OptiTrack raw marker reconstruction, Group 1: real gap closed, bit-for-bit exact
+The user asked a direct, fair question: has raw-to-model-ready ever actually been proven as one
+unbroken chain, and does that extend to OptiTrack's own un-ported reconstruction step (flagged in
+`global_cleaning.py`'s own docstring as "neither has been ported into this repo as runnable code
+yet")? The user separately went and found the answer is yes, it's portable — this entry closes it
+for Group 1.
+
+**What the raw OptiTrack export actually looks like**: unstable 3D marker tracks with names like
+"Unlabeled 1682" — no participant identity, may drop in and out, may be one of several candidate
+tracks for the same physical landmark. Getting from that to a clean `landmark{1,2,3}_{x,y,z}` per
+frame requires *something* to decide which raw marker name(s) correspond to which landmark, when.
+
+**Traced cell-by-cell** (not assumed) through every Group-1 OptiTrack cell in
+`OPTI_TRACK_PROCESSING.ipynb`, in order. Initially expected a `scipy.optimize.linear_sum_assignment`
+(Hungarian-algorithm) nearest-neighbor tracker — the notebook does contain three such variants
+("FAST FIRST PASS", "CONSERVATIVE", "BALANCED", each with different distance thresholds) — but
+**none of their three output directories is ever read by any later cell**. They're abandoned
+exploratory dead ends, confirmed by grepping every `OUT_DIR =`/`IN_DIR =` in the section and by the
+real fixture's own column set (`landmark{1,2,3}_{x,y,z,source}` — a `_source` provenance column
+none of the three Hungarian-tracker cells ever produce).
+
+**The actually-authoritative path is NOT algorithmic at all**: a hand-curated allowlist
+(`GROUP1_CHAINS`) of literal raw marker names per landmark per take, selected by the thesis author
+from inspecting tracklet-timeline plots — confirmed by following the real `IN_DIR`/`OUT_DIR` chain:
+"MANUAL TRACKLET STITCHING" → "FIND CANDIDATE FRAGMENTS FOR MISSING GAPS" (diagnostic only) →
+"UPDATED MANUAL TRACKLET STITCHING" (the CHAINS dict actually used) → "COMBINE TAKE 1 + TAKE 2"
+(whose own `out_path` IS `group_1/optitrack_final/group_1_optitrack_cleaned_combined_240hz.csv`,
+verbatim, no ambiguity). This matches — and for the first time actually verifies, cell-by-cell —
+`raw_sync_optitrack.py`'s own pre-existing docstring characterization ("a literal mapping... not
+derivable from a rule").
+
+Ported as `reconstruct_markers_group1()` + helpers in `src/preprocessing/raw_sync_optitrack.py`:
+reads the two raw Motive take exports, stitches each landmark from `GROUP1_CHAINS` (averaging
+simultaneously-present listed markers, recording provenance in `<landmark>_source`), interpolates
+gaps ≤10 frames + smooths with a 5-frame rolling mean, concatenates take_2 (shifted by the real
+inter-take capture-start gap, 1385.836s) after take_1.
+
+**Validated against the real raw take files** (`Arda_Thesis_Group-1_Take_{1,2}.csv`, 96.6MB +
+32.4MB — found already sitting in Downloads from an earlier session, no fresh download needed) and
+the already-known-good `group_1_optitrack_cleaned_combined_240hz.csv`: **474,995 rows, all 20
+columns, zero mismatches — bit-for-bit exact.**
+
+**What this closes and what it doesn't**: Group 1's OptiTrack pipeline is now provably a genuine
+unbroken chain, true raw export straight through to the file every downstream stage already
+consumes — no dependency on any pre-computed intermediate. Groups 2, 3, 5, 7, 8, 9, 10 each need
+their own `GROUP_N_CHAINS` traced the same careful way (per-group hand-curated, not assumed
+transferable) — not yet done. Group 6 has no OptiTrack recording.
+
 ### 2026-09-10 — Stopped the still-running `pipeline_run_final` process; cleaned up disk
 The `models` stage process discovered by the prior agent (PID 6052) had actually been running
 continuously since 2026-09-07 (~3 days) — traced to the pipeline script's speed-limiting flags

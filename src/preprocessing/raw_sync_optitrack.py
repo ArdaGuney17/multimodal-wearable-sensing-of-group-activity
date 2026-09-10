@@ -57,6 +57,7 @@ not expect it pre-cleaned here.
 
 from __future__ import annotations
 
+import csv
 import os
 from dataclasses import dataclass, field
 
@@ -80,6 +81,269 @@ RAW_ELAN_COLS = ["tier", "blank", "begin_hms", "begin_s", "end_hms", "end_s", "d
 
 TIME_COL = "time_s"
 OUT_TIME_COL = "video_time_s"
+
+
+# ================================================================
+# Raw marker-track reconstruction (Group 1) — ported from
+# OPTI_TRACK_PROCESSING.ipynb's own actually-authoritative Group-1 path
+# for producing group_1_optitrack_cleaned_combined_240hz.csv from the
+# TRUE raw Motive export (raw 3D marker tracks like "Unlabeled 1682",
+# no stable participant identity).
+#
+# Traced by reading every OptiTrack Group-1 cell in
+# notebooks_reference/OPTI_TRACK_PROCESSING_CODE_ONLY.py IN ORDER (not
+# grepped, not assumed): the notebook actually contains SIX distinct
+# Group-1 reconstruction/stitching cells, not three. The first three —
+# "FAST FIRST PASS 3-LANDMARK RECONSTRUCTION" (MAX_ASSIGN_DIST=0.35,
+# writes optitrack_cleaned/), "CONSERVATIVE 3-LANDMARK RECONSTRUCTION"
+# (MAX_ASSIGN_DIST=0.18, writes optitrack_cleaned_conservative/), and
+# "BALANCED 3-LANDMARK TRACKER" (MAX_ASSIGN_DIST=0.32,
+# MAX_REACQUIRE_DIST=0.55, writes optitrack_cleaned_balanced/) — are all
+# scipy.optimize.linear_sum_assignment (Hungarian-algorithm) nearest-
+# neighbor trackers, but NONE of their three output directories is ever
+# read by any later cell in the notebook; they are abandoned exploratory
+# variants, not the authoritative path, confirmed by grepping every
+# `OUT_DIR =`/`IN_DIR =` assignment in the whole Group-1 section and by
+# the fact that the real, already-validated
+# group_1_optitrack_cleaned_combined_240hz.csv (see
+# RAW_VALIDATION/group_1_optitrack/.../optitrack_final/) has the column
+# set frame,time_s,landmark{1,2,3}_{x,y,z,source},
+# landmark{1,2,3}_available,active_clean_landmarks,take,
+# time_s_original — with a `_source` provenance column (a "+"-joined
+# list of literal raw marker names) that only the manual-chains path
+# below produces; the Hungarian-tracker cells never write a `_source`
+# column at all.
+#
+# The actually-authoritative chain is:
+#   "MANUAL TRACKLET STITCHING" (first hand-picked CHAINS dict, writes
+#     optitrack_cleaned_manual_stitched/)
+#   -> "FIND CANDIDATE FRAGMENTS FOR MISSING GAPS" (diagnostic-only
+#     inspection of unused marker fragments near existing chain gaps;
+#     produces no file consumed by any later cell)
+#   -> "UPDATED MANUAL TRACKLET STITCHING" (CHAINS revised after the gap
+#     inspection above — the version ported below — writes
+#     optitrack_cleaned_manual_stitched_UPDATED/)
+#   -> "COMBINE TAKE 1 + TAKE 2" — its own `IN_DIR` is set to exactly the
+#     "UPDATED" cell's `OUT_DIR`, and its own `OUT_DIR`/`out_path` is
+#     exactly group_1/optitrack_final/
+#     group_1_optitrack_cleaned_combined_240hz.csv (verbatim, no
+#     ambiguity — this cell's file path IS the target filename).
+#
+# So the real per-(take, landmark) marker reconstruction here is NOT a
+# distance-based assignment algorithm at all — it is a hand-curated
+# allowlist of literal raw marker names per landmark per take
+# (`GROUP1_CHAINS` below), selected by the notebook's author from the
+# tracklet-timeline/successor-candidate plots the two inspection cells
+# produce. This matches this module's own pre-existing docstring
+# characterization ("a literal mapping of raw Motive 'Unlabeled NNNN'
+# marker-track IDs to participant identities, unique per group and per
+# take, not derivable from a rule") — confirmed here for Group 1
+# specifically, cell-by-cell, rather than assumed.
+# ================================================================
+
+RAW_MOTIVE_HEADER_ROWS = 7  # meta/name/id/axis header rows before the frame data in a raw Motive export
+
+# Verbatim from CELL 8 "OPTITRACK GROUP 1 - UPDATED MANUAL TRACKLET
+# STITCHING"'s own `CHAINS` dict — the revision actually consumed by the
+# combine cell (superseding CELL 6's earlier, narrower `CHAINS`, which
+# never reaches the combined file).
+GROUP1_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1669", "Unlabeled 1682", "Unlabeled 1726"],
+        "landmark2": [
+            "Unlabeled 1670", "Unlabeled 1687", "Unlabeled 1691", "Unlabeled 1704",
+            "Unlabeled 1710", "Unlabeled 1718", "Unlabeled 1735",
+        ],
+        "landmark3": [
+            "Unlabeled 1668", "Unlabeled 1674", "Unlabeled 1673", "Unlabeled 1678",
+            "Unlabeled 1680", "Unlabeled 1683", "Unlabeled 1696", "Unlabeled 1703",
+            "Unlabeled 1705", "Unlabeled 1711", "Unlabeled 1717", "Unlabeled 1732",
+            "Unlabeled 1733",
+        ],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1820"],
+        "landmark2": ["Unlabeled 1823"],
+        "landmark3": ["Unlabeled 1826", "Unlabeled 1829", "Unlabeled 1835"],
+    },
+}
+
+# Verbatim from CELL 9 "OPTITRACK GROUP 1 - COMBINE TAKE 1 + TAKE 2"'s own
+# comment: hardcoded from the two takes' real Motive "Capture Start Time"
+# metadata values (10:23:10.716 -> 10:46:16.552), not re-derived at
+# runtime from the raw files themselves.
+GROUP1_TAKE2_OFFSET_S = 1385.836
+
+
+def read_motive_long_and_frame_time(path: str) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+    """Reads one raw Motive/OptiTrack long-format take export: 7
+    metadata/header rows (`RAW_MOTIVE_HEADER_ROWS`), then one row per
+    exported frame with `frame`, `time_s`, then one (x, y, z) column
+    triple per marker starting at column index 2. Returns
+    `(meta, frame_time, long_df)`: `meta` is the parsed first header row
+    (key/value pairs), `frame_time` is the take's full (frame, time_s)
+    grid, and `long_df` is one row per (frame, marker) restricted to
+    frames where that marker's x/y/z were all present. Verbatim from
+    CELL 8's `read_motive_long_and_frame_time`."""
+    header_rows = []
+    with open(path, newline="", errors="replace") as f:
+        reader = csv.reader(f)
+        for _ in range(RAW_MOTIVE_HEADER_ROWS):
+            header_rows.append(next(reader))
+
+    meta_row = header_rows[0]
+    names_row = header_rows[3]
+    ids_row = header_rows[4]
+    axis_row = header_rows[6]
+
+    meta = {}
+    for i in range(0, len(meta_row) - 1, 2):
+        if meta_row[i]:
+            meta[meta_row[i]] = meta_row[i + 1]
+
+    ncols = len(axis_row)
+
+    marker_infos = []
+    for c in range(2, ncols, 3):
+        if c + 2 < ncols:
+            marker_infos.append({
+                "start_col": c,
+                "marker_name": names_row[c] if c < len(names_row) else "",
+                "marker_id": ids_row[c] if c < len(ids_row) else "",
+            })
+
+    raw = pd.read_csv(path, header=None, skiprows=RAW_MOTIVE_HEADER_ROWS, low_memory=False)
+    raw = raw.iloc[:, :ncols]
+
+    frame = pd.to_numeric(raw.iloc[:, 0], errors="coerce")
+    time_s = pd.to_numeric(raw.iloc[:, 1], errors="coerce")
+
+    frame_time = pd.DataFrame({"frame": frame.astype("Int64"), "time_s": time_s}).dropna().copy()
+    frame_time["frame"] = frame_time["frame"].astype(int)
+
+    parts = []
+    for info in marker_infos:
+        c = info["start_col"]
+        xyz = raw.iloc[:, [c, c + 1, c + 2]].apply(pd.to_numeric, errors="coerce")
+        xyz.columns = ["x", "y", "z"]
+        present = xyz.notna().all(axis=1)
+        if present.sum() == 0:
+            continue
+        parts.append(pd.DataFrame({
+            "frame": frame[present].values.astype(int),
+            "time_s": time_s[present].values,
+            "marker_name": info["marker_name"],
+            "marker_id": info["marker_id"],
+            "x": xyz.loc[present, "x"].values,
+            "y": xyz.loc[present, "y"].values,
+            "z": xyz.loc[present, "z"].values,
+        }))
+
+    long_df = pd.concat(parts, ignore_index=True)
+    long_df = long_df.dropna(subset=["frame", "time_s", "x", "y", "z"]).copy()
+    long_df["frame"] = long_df["frame"].astype(int)
+    return meta, frame_time, long_df
+
+
+def build_stitched_clean(frame_time: pd.DataFrame, long_df: pd.DataFrame,
+                          chains: dict[str, list[str]]) -> pd.DataFrame:
+    """For each landmark (in `chains`' own key order — landmark1,
+    landmark2, landmark3), averages the x/y/z of every listed raw marker
+    name present on a given frame (more than one simultaneously-present
+    listed marker -> mean; provenance recorded as a "+"-joined sorted
+    list of the marker names actually used, in `<landmark>_source`),
+    left-merged onto the take's full frame/time_s grid so every frame is
+    kept even when no listed marker is present. Verbatim from CELL 8's
+    `build_stitched_clean`."""
+    clean = frame_time.copy().sort_values("frame").reset_index(drop=True)
+    for landmark_name, marker_list in chains.items():
+        lm_df = long_df[long_df["marker_name"].isin(marker_list)].copy()
+        lm_by_frame = (
+            lm_df.groupby("frame", as_index=False)
+            .agg(x=("x", "mean"), y=("y", "mean"), z=("z", "mean"),
+                 source_markers=("marker_name", lambda x: "+".join(sorted(set(x)))))
+        )
+        clean = clean.merge(lm_by_frame, on="frame", how="left")
+        clean = clean.rename(columns={
+            "x": f"{landmark_name}_x", "y": f"{landmark_name}_y", "z": f"{landmark_name}_z",
+            "source_markers": f"{landmark_name}_source",
+        })
+
+    for i in (1, 2, 3):
+        cols = [f"landmark{i}_x", f"landmark{i}_y", f"landmark{i}_z"]
+        clean[f"landmark{i}_available"] = clean[cols].notna().all(axis=1)
+    clean["active_clean_landmarks"] = clean[
+        ["landmark1_available", "landmark2_available", "landmark3_available"]
+    ].sum(axis=1)
+    return clean
+
+
+def smooth_short_gaps(clean: pd.DataFrame, limit: int = 10, window: int = 5) -> pd.DataFrame:
+    """Per axis, per landmark: linearly interpolate gaps of up to
+    `limit` consecutive missing frames (both directions), then apply a
+    centered rolling mean of `window` frames (min_periods=1). Verbatim
+    from CELL 8's `smooth_short_gaps` (same defaults, same order of
+    operations — interpolate THEN rolling-mean, applied to every frame
+    including already-non-missing ones)."""
+    out = clean.copy()
+    for i in (1, 2, 3):
+        for axis in ("x", "y", "z"):
+            col = f"landmark{i}_{axis}"
+            out[col] = (
+                out[col].interpolate(limit=limit, limit_direction="both")
+                .rolling(window, center=True, min_periods=1).mean()
+            )
+    for i in (1, 2, 3):
+        cols = [f"landmark{i}_x", f"landmark{i}_y", f"landmark{i}_z"]
+        out[f"landmark{i}_available"] = out[cols].notna().all(axis=1)
+    out["active_clean_landmarks"] = out[
+        ["landmark1_available", "landmark2_available", "landmark3_available"]
+    ].sum(axis=1)
+    return out
+
+
+def reconstruct_markers_group1(take1_path: str, take2_path: str,
+                                take2_offset_s: float = GROUP1_TAKE2_OFFSET_S) -> pd.DataFrame:
+    """Full Group-1 raw-marker reconstruction, from the two raw Motive
+    take exports straight through to the same shape as
+    `group_1_optitrack_cleaned_combined_240hz.csv`: for each take, reads
+    the raw long-format export, stitches Landmark1/2/3 from
+    `GROUP1_CHAINS` (the notebook's hand-curated, gap-inspection-revised
+    marker-name allowlist), smooths short gaps, then concatenates take_2
+    (shifted by `take2_offset_s`, the real inter-take capture-start gap)
+    after take_1 and re-sorts by `time_s`, recomputing per-row landmark
+    availability on the combined frame exactly as the source does.
+    Verbatim from CELL 8 ("UPDATED MANUAL TRACKLET STITCHING") + CELL 9
+    ("COMBINE TAKE 1 + TAKE 2"); column order matches the real fixture
+    exactly (frame, time_s, landmark{1,2,3}_{x,y,z,source},
+    landmark{1,2,3}_available, active_clean_landmarks, take,
+    time_s_original)."""
+    take_paths = {"take_1": take1_path, "take_2": take2_path}
+    stitched = {}
+    for take_name, path in take_paths.items():
+        _, frame_time, long_df = read_motive_long_and_frame_time(path)
+        clean = build_stitched_clean(frame_time, long_df, GROUP1_CHAINS[take_name])
+        stitched[take_name] = smooth_short_gaps(clean)
+
+    take1 = stitched["take_1"].copy()
+    take2 = stitched["take_2"].copy()
+    take1["take"] = "take_1"
+    take2["take"] = "take_2"
+    take1["time_s_original"] = take1["time_s"]
+    take2["time_s_original"] = take2["time_s"]
+    take1["time_s"] = take1["time_s_original"]
+    take2["time_s"] = take2["time_s_original"] + take2_offset_s
+
+    combined = pd.concat([take1, take2], ignore_index=True)
+    combined = combined.sort_values("time_s").reset_index(drop=True)
+
+    for i in (1, 2, 3):
+        cols = [f"landmark{i}_x", f"landmark{i}_y", f"landmark{i}_z"]
+        combined[f"landmark{i}_available"] = combined[cols].notna().all(axis=1)
+    combined["active_clean_landmarks"] = combined[
+        ["landmark1_available", "landmark2_available", "landmark3_available"]
+    ].sum(axis=1)
+    return combined
 
 
 # ================================================================
