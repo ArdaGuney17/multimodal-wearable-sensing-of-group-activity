@@ -64,13 +64,22 @@ pip install -r requirements.txt
 
 ### Data
 
-Raw sensor data (~a few GB, all 9 groups' OptiTrack/Xsens/OpenEarable/ELAN recordings) is
-archived on Zenodo — **not** committed to this repository — under DOI: `<TODO: fill in once
-uploaded>`. Fetch it with:
+Raw sensor data (~2.5GB, all 9 groups' OptiTrack/Xsens/OpenEarable/ELAN recordings, anonymized —
+see [`docs/data_provenance.md`](docs/data_provenance.md) for exactly what's excluded and why) is
+**not** committed to this repository. It's hosted in two places:
+
+- **Now (interim)**: a public Google Drive folder —
+  [multimodal-group-activity-recognition-raw-data](https://drive.google.com/drive/folders/1c0LOZ98eEX9RyOY7iio6Rl_NOwFgxTf2).
+- **Eventually**: a permanent, DOI-citable Zenodo record, once published alongside the thesis paper.
+
+Fetch it with:
 
 ```bash
-python -m src.data.download   # downloads + extracts into data/raw/, verifies checksums
+python -m src.data.download                    # pulls from the current interim source (Drive)
+python -m src.data.download --source zenodo --record-id <id>   # once Zenodo is live
 ```
+
+Either way it downloads + extracts into `data/raw/` and verifies checksums.
 
 See [`docs/drive_source_inventory.md`](docs/drive_source_inventory.md) for what each raw
 subfolder contains and [`docs/table_to_source_mapping.md`](docs/table_to_source_mapping.md) for
