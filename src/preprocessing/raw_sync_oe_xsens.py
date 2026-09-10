@@ -739,8 +739,19 @@ def load_name_map(data_root: str, group: int) -> dict:
     committed to the repo and this function never embeds a real name as a
     Python literal — callers may instead pass a name_map dict directly to
     process_group()/run_group() from whatever private local source they
-    maintain."""
+    maintain.
+
+    Returns {} (not an error) when the file doesn't exist — that's the
+    expected, normal case for anyone running this against the published
+    anonymized dataset, where ELAN tiers already read "Participant1" etc.
+    rename_tier() already passes already-canonical ParticipantN values
+    through unchanged, so an empty map is a correct no-op here, not a
+    degraded fallback. A real name_map.json is only needed to process the
+    original, non-anonymized ELAN files directly (never published, kept
+    private by the thesis author)."""
     path = os.path.join(data_root, f"group_{group}", "elan", "name_map.json")
+    if not os.path.exists(path):
+        return {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
