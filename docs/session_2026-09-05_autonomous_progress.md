@@ -46,6 +46,103 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — Group 6 OptiTrack raw marker reconstruction: ported and validated bit-for-bit exact, closing the follow-up flagged by the correction below
+
+Follow-up task, same day: port Group 6's raw-Motive-marker reconstruction (the standing gap the
+correction entry directly below flagged) and validate it for real, following the same rigor as the
+other 8 groups (entry further below, "OptiTrack raw marker reconstruction, Groups 2/3/5/7/8/9/10").
+
+**Read Group 6's own cells in `OPTI_TRACK_PROCESSING.ipynb` in full, in order**, via `json.load` +
+direct `cell['source']` access (not grep, not assumed from any other group's structure — this
+session's own established lesson, learned the hard way earlier): CELL 21 markdown "GROUP 6" through
+CELL 26 "COMBINE TAKE 1-2" for raw cleaning; CELL 70 markdown "Group 6" through CELL 73 "FAST
+OPTITRACK LABELING FROM ELAN WITH TWO-POINT SYNC" for sync/labeling.
+
+**A genuine, Group-6-specific complication was found, not assumed away**: 3 raw Motive take files
+exist locally (`data/raw/group_6/optitrack/Arda_Group-6_Take_{1,2,3}.csv`, all confirmed present and
+non-empty), but the source notebook only actually uses 2 of them. CELL 22 ("FILE INTEGRITY /
+TIMESTAMP AUDIT") is diagnostic-only (row-count/monotonicity/gap checks across all 3 files, no
+output CSV). CELL 23 ("CHECK IF TAKE 3 IS DUPLICATE PREFIX OF TAKE 2") empirically compares Take 3
+against the first `len(Take 3)` rows of Take 2 — frame/time equality (`.astype(str).equals()`) AND a
+full numeric max-abs-diff over every column — and finds them identical (`np.nanmax(diff.values) ==
+0`, frame_time_equal=True); the cell's own printed conclusion is literally "Take 3 is an exact
+duplicate prefix of Take 2. Exclude Take 3." Both CELL 24 ("START INSPECTION") and CELL 25 ("MANUAL
+TRACKLET STITCHING") then explicitly restrict `TAKE_FILES`/`TAKE_PATHS` to Take 1 and Take 2 only,
+with the same comment repeated in each cell's header. CELL 26 ("COMBINE TAKE 1-2") concatenates just
+those two stitched-and-smoothed takes with a literal `TAKE_OFFSETS_S` (take_1=0.000,
+take_2=907.869s, from the two takes' real Motive "Capture Start Time" metadata: 2026-04-23
+16:25:43.206 -> 16:40:51.075) and adds one `optitrack_quality_note` (take_2 only: "Take 2 has weak
+Landmark 3 availability; large missing interval not force-filled.").
+
+**This makes Group 6 a genuinely new combination of traits, not identical to any single prior
+group**: like Groups 2/3/5, it has only ONE stitching pass (no "UPDATED" revision cell, unlike
+Groups 9/10); but like Groups 7/8, its real output DOES carry an `optitrack_quality_note` column
+(unlike Groups 2/3/5, which have none). Mechanically it still fits the already-ported, shared
+`reconstruct_markers_multi_take()` helper exactly — 2 takes instead of 4-6, same
+`read_motive_long_and_frame_time`/`build_stitched_clean`/`smooth_short_gaps` helpers (byte-identical
+to every other group's, confirmed directly), same offset/quality-note combine style. Ported as
+`GROUP6_CHAINS`/`GROUP6_TAKE_OFFSETS_S`/`GROUP6_QUALITY_NOTES` constants (verbatim from CELL 25/26)
+plus a thin `reconstruct_markers_group6(take_paths)` wrapper in `raw_sync_optitrack.py`, with an
+explicit docstring warning that passing a `take_3` path would silently double-count frames (nothing
+in the shared helper itself knows to deduplicate Take 3) — the source notebook never ran Take 3
+through the stitcher at all.
+
+**Validation, real numbers.** No known-good `group_6_optitrack_cleaned_combined_240hz.csv` fixture
+existed locally (confirmed by an explicit search of `data/external/thesis_data/RAW_VALIDATION/` and
+the whole repo tree — unlike the other 8 groups, whose fixtures were already present from earlier
+sessions). Per the task brief's own contingency plan: confirmed a connected Chrome browser via
+`list_connected_browsers` (one local browser, `Browser 1`), found the fixture in the user's own
+Drive via `search_files` (`group_6_optitrack_cleaned_combined_240hz.csv`, fileId
+`1P_oJa0KAcKiWV649bLdaz_c9blTTIfUL`, owner `ardagney05@gmail.com`, 67,614,074 bytes — over the 10MB
+direct-API cap, confirmed by a failed `download_file_content` call first, not assumed), then
+downloaded it via the established `uc?id=...&export=download` Chrome workaround; landed in Downloads
+at exactly 67,614,074 bytes (byte-for-byte the size Drive reported) and was copied into
+`data/external/thesis_data/RAW_VALIDATION/group_6_optitrack/group_6/optitrack/optitrack_final/`.
+Disk stayed at 11GB free throughout (checked before and after; the 67MB fixture is negligible against
+the 2GB stop threshold).
+
+Reconstructed Group 6 from the real raw takes 1 and 2 via `reconstruct_markers_group6()` and diffed
+column-for-column against the downloaded fixture: **295,951 rows on both sides, all 21 columns
+present on both sides (identical column sets), 0 mismatches on every one of the 21 common columns
+— 6,214,971 cells compared, 0 differences** (numeric columns at 1e-9 tolerance; `landmark{1,2,3}
+_source`/`optitrack_quality_note` compared as NaN/""-normalized text, the same normalization
+Group 7's validation needed in the earlier sweep). **Bit-for-bit exact — same standard as the other
+8 groups.** This closes the OptiTrack raw-marker-reconstruction sweep for all 9 study groups that
+have an OptiTrack recording (group_4 still excluded everywhere, camera failure).
+
+**`GROUP_SYNC_CONFIG[6]` (the downstream sync/shift step) was also re-verified, not just assumed
+correct because already present** — checked directly against CELL 73's own literal
+`OPTITRACK_FIRST_SYNC_TIME = 32.108333` / `OPTITRACK_LAST_SYNC_TIME = 1367.339833` assignments
+(exact match to the existing config) and against `OPTI_TRACK_PROCESSING_ANALYSIS.md`'s per-group
+table (row 164: "6 | CELL 71-73 (#60-62) | two-point linear | ... | earliest/latest sync row" —
+matches). Independently re-derived the real ELAN sync rows from
+`data/raw/group_6/elan/Group_6_individual_build_renamed.csv`: exactly 2 rows match the
+sync/synchron label regex, both on tier `Whole_Group` (29.988-31.926s and 1367.455-1371.091s,
+midpoints 30.957s/1369.273s — matching CELL 72's own `ELAN_FIRST_SYNC_MID=30.957`/
+`ELAN_LAST_SYNC_MID=1369.273` exactly), so this module's default `anchor_tier="Whole_Group"` already
+selects the correct rows with no override needed — the same situation as Groups 7/8 (unlike Group 9,
+whose two sync rows straddle two different tiers and need an explicit override). **No bug found;
+`GROUP_SYNC_CONFIG[6]` was already correct.** Added a verification comment to the config (mirroring
+the existing Group 7/8/9 comments) so this is now documented in the code itself, not just here.
+
+Also corrected the module's own docstring, which still stated (stale, pre-correction) "Group 6 has
+no OptiTrack recording" in two places — replaced with an explicit correction note pointing at this
+entry, so a future reader doesn't resurrect the wrong claim from the code comments themselves.
+
+**Not done this pass (optional item, deferred honestly rather than rushed or fabricated)**:
+extending `run_end_to_end_proof_task2.py`'s Task 2 10s-window feature-level proof (XSENS2/OE10/OPTI2
+diffed against `activity3_advanced_merged_10s_features.csv`) to include Group 6. Group 6's raw
+marker reconstruction and sync config are now both proven correct at their own level, but Task 2's
+own window-grid builders (`build_eng7_proximity`/`build_recognition_table`) require the FULL
+downstream chain (raw reconstruction -> sync/label transfer -> `global_cleaning.py`'s OptiTrack
+identity fix -> flattened model_ready) before any Group 6 Task 2 window can be built and diffed —
+that additional wiring + a real diff run was not attempted this session; flagged as the natural
+next step rather than claimed complete. Files touched: `src/preprocessing/raw_sync_optitrack.py`
+(GROUP6_CHAINS/GROUP6_TAKE_OFFSETS_S/GROUP6_QUALITY_NOTES, `reconstruct_markers_group6()`, module
+docstring correction, GROUP_SYNC_CONFIG[6] verification comment);
+`docs/table_to_source_mapping.md` and this file updated with the real result. No git operations
+performed (per task instructions) — left for review.
+
 ### 2026-09-11 — Correction: "Group 6 has no OptiTrack recording" was WRONG, stated as fact multiple times today
 
 Every earlier commit/doc entry today about the OptiTrack marker-reconstruction sweep (both the

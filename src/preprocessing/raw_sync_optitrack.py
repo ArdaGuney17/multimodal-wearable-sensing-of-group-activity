@@ -20,11 +20,25 @@ reconstruction pass itself — originally believed out of scope, "the
 single least-automatable step in the whole project" (a literal mapping of
 raw Motive "Unlabeled NNNN" marker-track IDs to participant identities,
 unique per group and per take, not derivable from a rule) — has since
-been ported and validated bit-for-bit exact for ALL 9 groups that have an
-OptiTrack recording (Group 1 first, then 2/3/5/7/8/9/10; Group 6 has no
-OptiTrack recording). See `reconstruct_markers_group1()`'s docstring
-below for the Group-1 trace and `reconstruct_markers_multi_take()`'s for
-the shared mechanism the other 7 groups turned out to genuinely share.
+been ported and validated for ALL 9 groups that have an OptiTrack
+recording (Group 1 first, then 2/3/5/7/8/9/10 bit-for-bit exact against
+real raw Motive takes; Group 6 added 2026-09-11, see below — every study
+group with an OptiTrack recording is now covered; group_4 has none,
+camera failure, excluded everywhere in this repo). See
+`reconstruct_markers_group1()`'s docstring below for the Group-1 trace
+and `reconstruct_markers_multi_take()`'s for the shared mechanism the
+other 8 groups turned out to genuinely share.
+
+CORRECTION (2026-09-11): earlier revisions of this module and of
+`docs/table_to_source_mapping.md` stated as fact that "Group 6 has no
+OptiTrack recording." That claim was never independently verified and
+was wrong — real raw Motive take files exist
+(data/raw/group_6/optitrack/Arda_Group-6_Take_{1,2,3}.csv), Group 6 has
+its own full section in OPTI_TRACK_PROCESSING.ipynb (CELL 22-26 raw
+cleaning, CELL 71-73 sync/labeling), and the official Task 2 reference
+CSV has 82 real, non-null Group 6 `opti2_*` rows. `reconstruct_markers_
+group6()` below is the now-ported ground truth; do not resurrect the old
+"no recording" claim anywhere else in this repo.
 `scripts/reproduce_pipeline.py`'s `sync` stage still bridges OptiTrack
 from the pre-reconstructed fixture rather than calling these functions —
 wiring that up is a follow-up, not yet done as of this update.
@@ -355,12 +369,48 @@ def reconstruct_markers_group1(take1_path: str, take2_path: str,
 
 
 # ================================================================
-# Raw marker-track reconstruction (Groups 2, 3, 5, 7, 8, 9, 10) --
+# Raw marker-track reconstruction (Groups 2, 3, 5, 6, 7, 8, 9, 10) --
 # ported the same way as Group 1 above: each group's OWN cells in
 # OPTI_TRACK_PROCESSING.ipynb were read in order (not assumed to share
 # Group 1's structure). Confirmed per-group, cell-by-cell, against
 # notebooks_reference/OPTI_TRACK_PROCESSING_CODE_ONLY.py:
 #
+#   Group 6  (CELL 22-26, #20-24), added 2026-09-11 -- previously,
+#     wrongly, believed to have no OptiTrack recording at all (see the
+#     module docstring's "Group 6 has no OptiTrack recording" claim,
+#     now known false and left as a corrected historical note there).
+#     Genuinely different from every other group in one respect: THREE
+#     raw Motive take files exist locally
+#     (data/raw/group_6/optitrack/Arda_Group-6_Take_{1,2,3}.csv), but
+#     only 2 are actually used. CELL 22 "FILE INTEGRITY / TIMESTAMP
+#     AUDIT" is diagnostic-only. CELL 23 "CHECK IF TAKE 3 IS DUPLICATE
+#     PREFIX OF TAKE 2" empirically compares Take 3 row-for-row against
+#     the first len(Take 3) rows of Take 2 (frame/time equality +
+#     numeric max-abs-diff over every column) and finds them identical
+#     (Take 3 is an exact duplicate prefix of Take 2, "same timing,
+#     same values" -- the cell's own printed recommendation is "Take 3
+#     is an exact duplicate prefix of Take 2. Exclude Take 3."). CELL 24
+#     "START INSPECTION" and CELL 25 "MANUAL TRACKLET STITCHING" (single
+#     pass, no update/revision cell -- unlike Groups 9/10) both then
+#     explicitly restrict `TAKE_FILES`/`TAKE_PATHS` to Take 1 and Take 2
+#     only, with an explicit comment ("Take 3 is excluded because it is
+#     an exact duplicate prefix of Take 2."). CELL 26 "COMBINE TAKE 1-2"
+#     concatenates just those two stitched takes with a literal
+#     TAKE_OFFSETS_S (take_1=0.000, take_2=907.869, from the two takes'
+#     real Motive "Capture Start Time" metadata: 2026-04-23 16:25:43.206
+#     -> 16:40:51.075) and adds one optitrack_quality_note (take_2 only)
+#     -- confirmed by reading CELL 26 directly, not assumed from any
+#     other group's shape. So Group 6 combines Groups 2/3/5's "single
+#     stitching cell, no update pass" shape with Groups 7/8's "has
+#     optitrack_quality_note" shape -- a genuinely new combination, not
+#     identical to any single prior group. Mechanically it still fits
+#     `reconstruct_markers_multi_take()` exactly (2 takes instead of
+#     4-6, same helpers, same offset/quality-note style) -- ported as
+#     `reconstruct_markers_group6()` below, called with only
+#     take_1/take_2 paths (the caller must NOT pass a take_3 path; doing
+#     so would silently double-count Take 3's frames, since nothing in
+#     `reconstruct_markers_multi_take()` itself knows to deduplicate
+#     it).
 #   Group 2  (CELL 11-13,  #11-13): single "MANUAL TRACKLET STITCHING"
 #     cell (no update/gap-inspection revision) -> "COMBINE TAKE 1-5".
 #     5 takes. No optitrack_quality_note column in the real output
@@ -400,7 +450,7 @@ def reconstruct_markers_group1(take1_path: str, take2_path: str,
 #     divergent revision; harmless since it's a deterministic rerun.
 #     optitrack_quality_note present (2 per-take notes). 3 takes.
 #
-# Genuinely shared mechanism across all 7 groups (verified by reading
+# Genuinely shared mechanism across all 8 groups (verified by reading
 # every cell, not assumed): each group's own
 # `read_motive_long_and_frame_time`/`build_stitched_clean`/
 # `smooth_short_gaps` are byte-identical to Group 1's (and to each
@@ -534,6 +584,40 @@ GROUP5_CHAINS: dict[str, dict[str, list[str]]] = {
 # Take 4: 13:53:41.450 / Take 5: 14:07:08.483
 GROUP5_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 754.781, "take_3": 1363.737,
                           "take_4": 1975.713, "take_5": 2782.746}
+
+# Group 6: CELL 25 "MANUAL TRACKLET STITCHING" -- single pass, no update
+# revision. Only take_1/take_2 (Take 3 excluded: CELL 23 empirically
+# confirmed it is an exact duplicate prefix of Take 2 -- identical
+# frame/time and numeric values over its full length -- so it carries
+# no additional data and must NOT be passed to
+# `reconstruct_markers_group6()`).
+GROUP6_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1289", "Unlabeled 1348", "Unlabeled 1369"],
+        "landmark2": ["Unlabeled 1288", "Unlabeled 1290", "Unlabeled 1305", "Unlabeled 1320",
+                      "Unlabeled 1321", "Unlabeled 1338"],
+        "landmark3": ["Unlabeled 1293", "Unlabeled 1303", "Unlabeled 1307", "Unlabeled 1334",
+                      "Unlabeled 1344", "Unlabeled 1349", "Unlabeled 1360", "Unlabeled 1362",
+                      "Unlabeled 1363", "Unlabeled 1374", "Unlabeled 1378", "Unlabeled 1385"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 2086", "Unlabeled 2108", "Unlabeled 2130", "Unlabeled 2135",
+                      "Unlabeled 2137", "Unlabeled 2139", "Unlabeled 2144", "Unlabeled 2174"],
+        "landmark2": ["Unlabeled 2084", "Unlabeled 2088", "Unlabeled 2090", "Unlabeled 2093",
+                      "Unlabeled 2096", "Unlabeled 2098", "Unlabeled 2103", "Unlabeled 2109",
+                      "Unlabeled 2111", "Unlabeled 2115", "Unlabeled 2118", "Unlabeled 2120",
+                      "Unlabeled 2127"],
+        "landmark3": ["Unlabeled 2085", "Unlabeled 2100", "Unlabeled 2106", "Unlabeled 2110",
+                      "Unlabeled 2116", "Unlabeled 2117", "Unlabeled 2123", "Unlabeled 2126",
+                      "Unlabeled 2148", "Unlabeled 2177"],
+    },
+}
+# Real offset from Take 1 capture start (verbatim comment, CELL 26):
+# Take 1: 2026-04-23 16:25:43.206 / Take 2: 16:40:51.075 -> 907.869s.
+GROUP6_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 907.869}
+GROUP6_QUALITY_NOTES = {
+    "take_2": "Take 2 has weak Landmark 3 availability; large missing interval not force-filled.",
+}
 
 GROUP7_CHAINS: dict[str, dict[str, list[str]]] = {
     "take_1": {
@@ -794,6 +878,20 @@ def reconstruct_markers_group5(take_paths: dict[str, str]) -> pd.DataFrame:
     return reconstruct_markers_multi_take(take_paths, GROUP5_CHAINS, GROUP5_TAKE_OFFSETS_S)
 
 
+def reconstruct_markers_group6(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 6, 2 takes (take_1, take_2 only). Verbatim from CELL 25 +
+    CELL 26. Take 3's raw file exists on disk
+    (data/raw/group_6/optitrack/Arda_Group-6_Take_3.csv) but is NOT part
+    of the reconstruction: CELL 23 empirically confirmed it is an exact
+    duplicate prefix of Take 2 (identical frame/time and numeric values
+    over its full length), and both CELL 24 and CELL 25 explicitly
+    exclude it. Callers must pass only take_1/take_2 paths -- passing a
+    take_3 entry would not reproduce the source notebook's output (it
+    never ran Take 3 through the stitcher at all)."""
+    return reconstruct_markers_multi_take(take_paths, GROUP6_CHAINS, GROUP6_TAKE_OFFSETS_S,
+                                           GROUP6_QUALITY_NOTES)
+
+
 def reconstruct_markers_group7(take_paths: dict[str, str]) -> pd.DataFrame:
     """Group 7, 4 takes. Verbatim from CELL 29 + CELL 31 (CELL 30's
     "GAP CANDIDATE INSPECTION" is diagnostic-only, confirmed not read by
@@ -886,7 +984,16 @@ GROUP_SYNC_CONFIG: dict[int, OptitrackSyncConfig] = {
     7: OptitrackSyncConfig(group=7, method="two_point",
                             first_sync_time=71.119, last_sync_time=2977.631667),
 
-    # Group 6: two-point linear.
+    # Group 6: two-point linear. OPTI_TRACK_PROCESSING_ANALYSIS.md's per-group
+    # table (CELL 71-73 / #60-62) gives OPTITRACK_FIRST_SYNC_TIME=32.108333 /
+    # OPTITRACK_LAST_SYNC_TIME=1367.339833 verbatim -- matches below exactly,
+    # re-verified directly against CELL 73's own literal assignment (2026-09-11).
+    # Empirically re-verified against the real Group_6_individual_build_renamed
+    # .csv: exactly 2 sync-like rows exist, BOTH on tier Whole_Group
+    # (29.988-31.926s, midpoint 30.957, matching CELL 72's own
+    # ELAN_FIRST_SYNC_MID=30.957; 1367.455-1371.091s, midpoint 1369.273,
+    # matching CELL 72's own ELAN_LAST_SYNC_MID=1369.273) -- no anchor_tier
+    # override needed, same situation as Groups 7/8 (unlike Group 9).
     6: OptitrackSyncConfig(group=6, method="two_point",
                             first_sync_time=32.108333, last_sync_time=1367.339833),
 
