@@ -46,6 +46,29 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — Task 1 headline gap follow-up: scikit-learn version tested and ruled out
+
+Tested the most concrete hypothesis from the earlier headline-gap investigation: the source
+notebook (`task1_full_comparison_classical_elapsed_dl_with_std.ipynb`) was created 2026-07-20,
+last modified 2026-08-13 (Drive metadata) — around when scikit-learn 1.9.0 (released 2026-06-02)
+and PyTorch 2.13.0 (released 2026-07-08) were current on Colab's default image, vs. this repo's
+pinned scikit-learn==1.6.1 (older) and torch==2.14.0 (newer).
+
+Installed scikit-learn 1.9.0 isolated (`pip install --target=<tmp dir> scikit-learn==1.9.0
+narwhals --no-deps`, loaded via `PYTHONPATH` — did not touch the main environment or
+`requirements.txt`) and re-ran `run_exact_reproduction()` against the real official data.
+
+**Result: bit-for-bit identical to the sklearn 1.6.1 run** — every fold, every digit
+(pooled_accuracy=0.7338454586534117, both versions). **scikit-learn version is ruled out as the
+cause of the ~7-point gap from the historical 0.8064 target.** `SelectKBest`/`RobustScaler`'s
+relevant numerical behavior evidently didn't change between these versions in a way that matters
+here. The remaining, untested candidate from the original hypothesis is PyTorch (2.14.0 vs. the
+likely-original ~2.13.0) — a much smaller version gap, so less likely, but not yet tested. Gap
+remains open and unexplained; ruling out sklearn narrows the search space rather than closing it.
+
+Temp isolated sklearn install cleaned up after the test; no changes to `requirements.txt` or the
+main environment.
+
 ### 2026-09-11 — OptiTrack raw marker reconstruction, Groups 2/3/5/7/8/9/10: all 7 remaining groups ported and validated bit-for-bit exact against real raw Motive takes; the Group-1-vs-others reconstruction shape genuinely differs and was NOT assumed to transfer
 Continuing the 2026-09-10/11 Group 1 closure (entry below): each of the 7 remaining groups'
 OWN cells in `OPTI_TRACK_PROCESSING.ipynb` were read in order via `json.load` (not grep, not
