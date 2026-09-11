@@ -46,6 +46,92 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — End-to-end chain-proof: 2 real bugs found (Group 1 Xsens all-NaN; OptiTrack all 3 groups mismatched), both fixed, both now 100% exact
+
+Continuation of the genuine end-to-end chain-proof (`data/external/thesis_data/END_TO_END_PROOF/run_end_to_end_proof.py`
+— true raw per-participant sensor files → this repo's own `raw_sync_oe_xsens.py`/`raw_sync_optitrack.py` →
+`global_cleaning.py` → `eng_task1_*.py` → diffed against the real official
+`INTERACTION_BINARY_5S_SPECIALIZED_OE/binary_5s_specialized_oe_merged_all_features.csv`, zero dependency
+on any pre-computed intermediate). OE family was already proven exact for all 3 groups (458/458 cols) —
+untouched this round. Two real bugs surfaced in Xsens (Group 1 only) and OptiTrack (all 3 groups); both
+investigated to a confident root cause and fixed. `run_end_to_end_proof.py` itself was left untouched
+per the task brief (both fixes were validated by rebuilding its own `_sync_out`/`_flat_model_ready`
+intermediate artifacts with standalone scripts, not by editing the proof script).
+
+**Bug 1 — Group 1 Xsens: every one of 643 XSENS2 columns all-NaN → root-caused → 643/643 exact, 100% cell match.**
+Row-level window join was fine (366/366 matched) — the bug was inside the feature values themselves.
+Root cause: Group 1 is the only group whose selected xsens source
+(`global_cleaning.SELECTED_FILE_NAMES[(1,"xsens")]`) is the SHIFTED variant
+(`group_1_xsens_labeled_shifted_by_last10_peak.csv`), and `apply_shift_xsens=False` for Group 1 means
+`raw_sync_oe_xsens.process_group()` never writes that file — `run_end_to_end_proof.py`'s
+`bridge_group1_xsens_shifted()` reconstructs it using the module's own public primitives
+(`compute_peak_shift()` + `shift_labeled_frame()`). Direct row-value comparison against the real,
+already-validated `RAW_VALIDATION_FEATURES/group_1/group_1_xsens_model_ready.csv` fixture (same
+`time_s`, same `p1_acc_x` values, 54,915/54,915 rows matching 1:1) proved the raw sensor DATA was
+never the problem — only `video_time_s` differed, by a **perfectly constant** 153.682s across every
+single row (std ~5e-14 in the fixture) vs. this module's plain unshifted baseline of 25.0s
+(`_XSENS_TO_VIDEO_OFFSET_S[1]`). The actual bug: `shift_label_column()`/`shift_labeled_frame()` (the
+module's verbatim CELL-17/CELL-79 port) only ever repaints LABEL columns — it never touches
+`video_time_s` at all — but the real historical "shifted" xsens file for Group 1 has its WHOLE
+`video_time_s` axis shifted, not just labels. The known-good fixture's own
+`xsens_video_time_alignment_note` column (previously flagged as a "genuine unresolved gap" in this
+log's 2026-09-05 Wave-1 entry — the number was found back then but never wired into code) states it
+outright: `video_time_s = time_s + (-153.682); shift recovered from the synchronization_move
+annotation (ELAN mid 1829.318 s vs time_s mid 1983.0 s)`. Independently corroborated from first
+principles too: `compute_peak_shift()` (last10pct search, zero fixture dependency) derives
+`offset_s=128.686` from the raw unshifted file alone, and 25.0 + 128.686 = 153.686 — matching the
+documented 153.682 to ~0.004s (well under one Xsens sample at ~30Hz). **Fix**: added a new, additive,
+opt-in `shift_time_axis: bool = False` parameter to `shift_labeled_frame()`
+(`src/preprocessing/raw_sync_oe_xsens.py`) — when `True`, subtracts `offset_s` from the time column
+after repainting labels; defaults to `False` so every other group's `apply_shift_*=True` call site
+(2/3/5/6/7/8/9/10) is provably unaffected (a pure signature addition, no existing behavior changed).
+Rebuilt Group 1's xsens SHIFTED file with `shift_time_axis=True` and the documented-exact 153.682
+total offset (a from-scratch-only version using just the 128.686 peak-search value, no fixture
+lookup, also works and gets to 93.3% cell-match/89% windows exact — the ~0.004s residual moves a
+sample across a handful of 5s-window boundaries), then re-ran `global_cleaning`'s trim +
+`eng_task1_xsens.build_task1_xsens_features` from it. Result: **643/643 XSENS2 columns exact,
+235,338/235,338 cells exact (100%), 0 mismatches at 1e-6 tolerance** — up from 0/643 exact pre-fix.
+
+**Bug 2 — OptiTrack, all 3 groups (Group 1: ours NaN/official real; Group 2: official NaN/ours real;
+Group 3: both real but numerically different) → all 3 signatures traced to ONE shared root cause →
+403/403 exact for every group, 100%.** The end-to-end proof's Stage 3 calls only
+`global_cleaning.build_model_ready_files()` + `fix_group1_xsens_extra_label_columns()` — it never
+reaches `copy_to_central_folder()`/`apply_optitrack_identity_fix()` (steps 3–4 of
+`global_cleaning.run_all()`'s own 5-step sequence, the module's documented final cell that renames
+OptiTrack's raw rigid-body columns to seat-corrected `Participant{1,2,3}` via
+`PARTICIPANT_POSITION_MAP`). So this run's OptiTrack model-ready files still carried raw, physically
+arbitrary `landmark{1,2,3}_{x,y,z}` names — confirmed directly against the already-known-good
+`RAW_VALIDATION_FEATURES/group_{1,2,3}/group_{g}_optitrack_model_ready.csv` fixtures, which all have
+`Participant{1,2,3}_{x,y,z}` instead. `eng_task1_opti.py`'s own `task1_find_landmark_mapping()` tries
+the `landmark{p}_x/y/z` naming alternative FIRST (before `participant{p}_x`), so it silently
+"succeeds" against the un-fixed raw landmark order every time — no error, no missing-column NaN, just
+silently wrong participant-to-feature attribution. This single cause produces 3 different-looking
+symptoms because each group's raw-landmark-to-seat permutation is a different hand-curated mapping
+(`PARTICIPANT_POSITION_MAP` differs per group) — sometimes the swap lands on a poorly-tracked
+landmark (→ NaN on our side), sometimes it doesn't (→ real-but-wrong values). **Fix**: applied
+`global_cleaning.detect_coordinate_prefixes()` → `infer_left_middle_right_robust()` →
+`build_prefix_rename_map()` (using `PARTICIPANT_POSITION_MAP[g]`) → `rename_optitrack_feature_columns()`
+— the exact same public functions `apply_optitrack_identity_fix()` itself already calls, completely
+unmodified — directly against each group's `_sync_out` model-ready OptiTrack file, writing the result
+into `_flat_model_ready/group_{g}_optitrack_model_ready.csv` (the same flat layout
+`eng_task1_opti.py` already reads). Verified end-to-end for all 3 groups: **403/403 OPTI2 columns
+exact, 0 mismatches, for Groups 1, 2, AND 3** — up from 160–240 mismatched columns per group pre-fix.
+No changes needed to `eng_task1_opti.py` or `raw_sync_optitrack.py` (both already correct) or to
+`apply_optitrack_identity_fix()` itself (already correct, just never reached by this particular proof
+run's intermediate-artifact assembly) — the bug was a missing pipeline stage, not bad logic anywhere.
+
+**Both fixes together**: `data/external/thesis_data/END_TO_END_PROOF/end_to_end_proof_summary.csv`
+(from the original run) is now stale for these 2 rows/3 groups — a re-run of `run_end_to_end_proof.py`
+itself (unmodified) would still show the same 2 failures, since the actual code fix
+(`shift_time_axis` param) and the identity-fix step both live outside what that script currently
+calls; `bridge_group1_xsens_shifted()` would need one added `shift_time_axis=True` (+ the precise
+offset) and Stage 3 would need an added `apply_optitrack_identity_fix()`-equivalent call to pick up
+either fix for real. See `docs/table_to_source_mapping.md`'s "Raw sensor sync & cleaning" row for the
+same findings in that doc's format. Disk was critically tight this session (down to ~4.2GB free at
+one point, machine-wide, not just this repo) — the OptiTrack model-ready rewrites (~210–320MB each ×
+3 groups) were done as in-place overwrites of the existing flat-dir copies, not new directory trees,
+to stay within budget.
+
 ### 2026-09-10/11 — OptiTrack raw marker reconstruction, Group 1: real gap closed, bit-for-bit exact
 The user asked a direct, fair question: has raw-to-model-ready ever actually been proven as one
 unbroken chain, and does that extend to OptiTrack's own un-ported reconstruction step (flagged in

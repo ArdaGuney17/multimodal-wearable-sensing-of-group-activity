@@ -1436,13 +1436,48 @@ def shift_label_column(labeled_df: pd.DataFrame, time_col: str, label_col: str, 
 
 
 def shift_labeled_frame(labeled_df: pd.DataFrame, time_col: str, offset_s: float,
-                         end_inclusive: bool = False) -> pd.DataFrame:
-    """Applies shift_label_column() to every tier's label_* column."""
+                         end_inclusive: bool = False, shift_time_axis: bool = False) -> pd.DataFrame:
+    """Applies shift_label_column() to every tier's label_* column.
+
+    `shift_time_axis` (default False, preserving every existing caller's
+    behavior unchanged): when True, ALSO subtracts `offset_s` from
+    `time_col` itself after repainting labels, moving the row's own
+    video-time value rather than just repainting which label text lands on
+    which (unmoved) row.
+
+    2026-09-11 finding (Group 1 xsens end-to-end proof, real-data
+    investigation): the default (labels-only) behavior is confirmed correct
+    for CELL 17/CELL 79's own documented algorithm and matches every group
+    whose `SELECTED_FILE_NAMES` entry stays on the UNSHIFTED variant. But
+    Group 1 is the one group whose SELECTED_FILE_NAMES entry actually picks
+    the SHIFTED xsens file as the real model-ready source
+    (`group_1_xsens_labeled_shifted_by_last10_peak.csv`), and the real,
+    already-validated `group_1_xsens_model_ready.csv` fixture (
+    `data/external/thesis_data/RAW_VALIDATION_FEATURES/group_1/`, itself
+    confirmed byte-for-byte feature-exact against the true official
+    `binary_5s_specialized_oe_merged_all_features.csv`) has a `video_time_s`
+    column that is NOT the same as the unshifted file's `video_time_s` for
+    the same underlying raw sample: `time_s - video_time_s` is a PERFECTLY
+    constant 153.682 across all 54,915 real Group 1 rows (std ~5e-14) in
+    that fixture, vs. this module's plain `add_xsens_video_time` baseline
+    of exactly 25.0 (`_XSENS_TO_VIDEO_OFFSET_S[1]`). 153.682 - 25.0 =
+    128.682, matching (to ~0.004s, likely search-window/smoothing rounding)
+    `compute_peak_shift`'s own `offset_s` for Group 1 xsens (128.686,
+    last10pct search). I.e., for this one real file, the notebook's actual
+    "shift" moved the WHOLE video_time_s axis by `offset_s`, not just the
+    label text. `shift_time_axis=True` reproduces that. Only Group 1's
+    xsens bridge reconstruction should ever need this — every other group
+    that reaches this function with apply_shift_*=True has its shifted
+    variant already validated under the default labels-only behavior, so
+    this parameter defaults to False and no existing call site is
+    affected."""
     df = labeled_df.copy()
     for tier in TIERS:
         col = f"label_{tier}"
         if col in df.columns:
             df[col] = shift_label_column(df, time_col, col, offset_s, end_inclusive)
+    if shift_time_axis:
+        df[time_col] = pd.to_numeric(df[time_col], errors="coerce") - offset_s
     return df
 
 
