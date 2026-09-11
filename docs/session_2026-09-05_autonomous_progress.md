@@ -46,6 +46,93 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — Task 1 headline ~0.8064 gap investigated in full: code port confirmed byte-for-byte faithful to the source notebook, notebook's own stored output proves 0.8064 is a real historical CPU execution (not a thesis-text transcription artifact), no fixable bug found — most likely explanation is Colab-era vs. current library-version drift, reported honestly as unresolved
+
+Follow-up to the entry below (same day), which first surfaced this gap and explicitly deferred it.
+Task: find out *why* `run_exact_reproduction()` gets pooled_accuracy=0.7338 against the real, pristine
+official `binary_5s_specialized_oe_merged_all_features.csv`, ~7 points under the module's documented
+target (~0.8064/0.8062/0.8065) — rigorously, not guessing.
+
+**Step 1 — line-by-line code diff against the real source.** Found the exact source cells: the
+`CODE_ONLY.py` export of `notebooks_reference/task1_full_comparison_classical_elapsed_dl_with_std.ipynb`
+already exists (lines 1960-2855 = notebook cells 15-16, the module's own docstring calls these
+"cells 16-17" using 1-indexed-with-markdown counting). Read `src/models/task1.py`'s
+`run_exact_reproduction()`/`_train_exact_fold()`/`_exact_repro_shared()` and `src/models/common.py`'s
+`make_sequences()`/`TransformerClassifier`/`PositionalEncoding` side-by-side against the notebook
+source, every line. **Result: zero differences found anywhere** — SEED=42, SEQ_LEN=18, K=120,
+MAX_EPOCHS=80, PATIENCE=12, BATCH_SIZE=64; `TransformerClassifier(d_model=64, nhead=4, num_layers=2,
+dim_feedforward=128, dropout=0.25, activation="gelu", norm_first=True)` and its sinusoidal
+`PositionalEncoding`; `AdamW(lr=5e-4, weight_decay=1e-4)`; `ReduceLROnPlateau(mode="max", factor=0.5,
+patience=4, min_lr=1e-5)`; grad-clip `max_norm=1.0`; class-weighted `CrossEntropyLoss`; the exact
+`RobustScaler.fit_transform` → `SelectKBest(f_classif, k=120).fit_transform` order (scale-then-select,
+not the reverse); per-fold training-set-only median imputation; the "largest remaining group ID" LOGO
+validation-group rule (with its `<50`-sample fallback); and `make_sequences()`'s per-group
+sort-by-`window_start`-then-slide construction are all verbatim-identical between the port and the
+notebook. `DATA_PATH` in the notebook points at the identical filename/subfolder this module reads.
+This rules out a porting bug as the cause with high confidence — this is a real, faithful reproduction
+of the notebook's own code.
+
+**Step 2 — is 0.8064 even a real, executed number, or a thesis-text artifact (the Table 8.4 Segment
+Markov pattern)?** Read the actual `.ipynb` JSON directly (not the CODE_ONLY export, which strips
+outputs) and found cell 15 (the exact-reproduction cell) has **stored, previously-executed Colab
+output**: `Dataset shape: (4579, 1515)`, `OPTI2_RELATIVE_ONLY features: 211`, a full 9-fold log, and a
+`display_data` output table showing `pooled_accuracy=0.8064, pooled_macro_f1=0.8062,
+pooled_balanced_accuracy=0.8065` — matching the module's documented target to 4 decimals. **This is a
+real, once-executed result of this exact code, not a transcription artifact** — the opposite conclusion
+from the Table 8.4 Segment Markov case, where the published figure turned out not to exist anywhere in
+the notebook's own code/outputs. Also confirmed from the notebook's own cell 3 output: `Device: cpu` —
+the original historical run was on CPU too, which **rules out a GPU-vs-CPU nondeterminism explanation**
+(a natural first guess, since this session's own runs are CPU-only).
+
+**Step 3 — data identity check.** The notebook's stored output's `Dataset shape: (4579, 1515)` and its
+displayed `binary_label` value-counts (`non_interaction 2304, interaction 2275`) were directly compared
+against this session's own real official CSV (`data/external/thesis_data/INTERACTION_BINARY_5S_SPECIALIZED_OE/
+binary_5s_specialized_oe_merged_all_features.csv`) — **identical**: same shape, same label distribution,
+same per-group row counts (1:366, 2:566, 3:535, 5:792, 6:274, 7:579, 8:464, 9:713, 10:290). So the input
+data is not the source of the gap either.
+
+**Step 4 — fold-by-fold shape of the divergence.** Compared the notebook's own stored per-fold results
+against this session's real-official-data rerun (`task1_optimized_0806_fold_metrics.csv`), fold-for-fold
+by test group. Most folds are within a few points (test-group 3: macro-F1 0.858 vs. 0.835; test-group 7:
+0.813 vs. 0.821; test-group 8: 0.781 vs. 0.716), but **one fold is wildly different** — test-group 5:
+notebook macro-F1 0.8902 (best_epoch 6) vs. this session's 0.6192 (best_epoch 1), a 27-point swing — and
+two more are meaningfully off (test-group 2: 0.7977 vs. 0.7688; test-group 9: 0.8057 vs. 0.7200). This
+non-uniform, "some folds nearly exact, one fold catastrophic, different best-epochs selected" shape is
+the same signature already established earlier this same day (entry below): `SelectKBest(k=120)`'s hard
+discrete cutoff on 211 candidate F-scores is provably sensitive to ~1e-10-level floating-point noise near
+the selection boundary (that entry's official-vs-reconstructed A/B test showed exactly this scale of
+noise flipping feature-selection membership and shifting pooled metrics by ~0.015-0.016 on its own, with
+no data difference beyond float64 rounding). The same mechanism, compounded across 9 independent LOGO
+folds and additionally amplified by any tiny difference in weight-init/dropout RNG draws cascading through
+up to 80 epochs of early-stopped training, is sufficient in principle to produce a swing of this size and
+shape.
+
+**Step 5 — environment/version check.** No `!pip install` cell and no `__version__` print exists anywhere
+in the 17-cell source notebook (checked all cells directly). The only environment evidence is `from
+google.colab import drive` in cell 3 — confirming this was authored/run in Google Colab, whose default
+library versions are not recorded anywhere in the notebook and cannot be recovered from it. This repo's
+own `requirements.txt` header is explicit that its pins (`numpy==2.2.5`, `scikit-learn==1.6.1`,
+`torch==2.14.0+cpu`) were validated against *this* reproduction in *this* session's own environment —
+never claimed to match the original Colab environment. `torch==2.14.0` in particular is many major
+versions past what a Colab notebook from the likely thesis-writing era would have shipped; version-to-
+version changes in default attention-kernel backend, GELU implementation, or linear-layer weight-init RNG
+consumption are all plausible (though — honestly — individually unverifiable without the original
+environment) sources of exactly this kind of cascading numeric drift.
+
+**Conclusion: no fixable bug found; most parsimonious explanation is library/environment version drift,
+reported as genuinely unresolved.** The port is verbatim-faithful to its source (Step 1) against
+identical data (Step 3); the 0.8064 target is a real historical execution, not a transcription error
+(Step 2); the divergence pattern (Step 4) matches an already-proven noise-amplification mechanism in this
+exact pipeline; and the source notebook's only environment fingerprint (Colab, CPU, no pinned versions)
+is consistent with — though does not conclusively prove — version drift against this repo's current
+pins (Step 5) as the root cause. **Not chased further by actually installing older library versions**:
+no original Colab version numbers are recoverable to target, each full 9-fold LOGO retrain is slow
+(CPU-only), and disk is tight (~9.4GB free per `df -h /c`) — flagged for a future session if the original
+Colab image's package versions ever become independently discoverable. `docs/table_to_source_mapping.md`'s
+Task 1 row updated with the same findings (status changed 🟨 → ⚠️, since the code is now confirmed correct
+but the headline number itself remains an open, honestly-reported gap). No code changes made — nothing
+concrete to fix. No git operations performed (per task instructions) — left for review.
+
 ### 2026-09-11 — Model-equivalence test: reconstructed features are numerically correct (float64-precision-exact), but a real downstream fragility + a separate, bigger, unexplained gap both surfaced
 
 Direct answer to "if our reconstructed features feed the actual model code, do we get the same
