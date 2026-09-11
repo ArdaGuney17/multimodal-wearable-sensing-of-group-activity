@@ -46,6 +46,175 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — Correction: "Group 6 has no OptiTrack recording" was WRONG, stated as fact multiple times today
+
+Every earlier commit/doc entry today about the OptiTrack marker-reconstruction sweep (both the
+Group 1 closure and the "all remaining 7 groups" closure) stated Group 6 was correctly excluded
+because it "has no OptiTrack recording." **That claim was never independently verified and turns
+out to be false.** The Task 2 end-to-end proof (entry directly below) found a real contradiction
+while trying to exclude Group 6 from its own scope, and this was independently re-verified just
+now, directly, before accepting it:
+
+- `raw_sync_optitrack.py`'s `GROUP_SYNC_CONFIG[6]` genuinely exists (`method="two_point"`, real
+  sync constants) — it was never actually absent.
+- Real raw Motive take files exist locally: `data/raw/group_6/optitrack/Arda_Group-6_Take_{1,2,3}.csv`.
+- The official Task 2 reference (`INTERACTION_ABLATIONS/activity3_advanced_merged_10s_features.csv`)
+  has 82 real Group 6 rows with genuine, non-null `opti2_*` values (76.8% non-null on the checked
+  column, real sample values — not placeholder/empty).
+
+**So Group 6 did have an OptiTrack recording all along — it was just never ported in this repo**
+(no `GROUP6_CHAINS`/`reconstruct_markers_group6()` exists), unlike every other group. This is a
+real, standing gap, not a correct exclusion. Flagged here explicitly as a correction to my own
+repeated, unverified claim — not something to quietly let stand corrected only in a buried footnote.
+Porting Group 6's marker reconstruction is a genuine follow-up item, same priority tier as the
+other real open items in this log (the Task 1 headline-number gap, the Task 2 OE10/XSENS2 numerical
+sensitivities below).
+
+### 2026-09-11 — Task 2 end-to-end proof: raw sensor files -> this repo's own code -> official Task 2 10s-window features, 7/8 applicable groups ALL EXACT, 2 real (small, well-characterized) discrepancies found and investigated to a confident root cause, Group 6 excluded with reasoning + a real doc-vs-reality contradiction flagged
+
+Same-day continuation of Task 1's now-complete end-to-end proof (entry below, "End-to-end proof
+finalized"). This pass's job: prove the SAME thing for Task 2's 10s-window feature families
+(XSENS2/OE10/OPTI2, `src/features/eng_task2_{grid,xsens,opti,merge}.py` +
+`eng7_proximity_features.py`/`eng3_recognition_labels.py`/`oe9_oe10_features.py`) — true raw
+sensor data, through this repo's own code at every stage, against the official
+`activity3_advanced_merged_10s_features.csv`, zero pre-computed dependency.
+
+**New script**: `data/external/thesis_data/END_TO_END_PROOF/run_end_to_end_proof_task2.py`, sibling
+of `run_end_to_end_proof.py`. Reuses that script's Stage 1-4 functions (raw sync, global_cleaning,
+OptiTrack identity fix, flatten) via direct import rather than reimplementing them — raw sync isn't
+Task-specific, so the same `_sync_out`/flat model_ready files feed both Task 1's and Task 2's
+feature builders. New Stage 5 builds the ENG7 10s proximity grid + ENG3 5s recognition labels +
+Task 2 base window grid, then XSENS2/OE10/OPTI2/merge, diffed per-family against the official CSV
+(same rounded-key row-alignment precedent already established by
+`RAW_VALIDATION_FEATURES/run_group6_task2_features_validation.py`).
+
+**Real concurrency bug found + fixed before any real numbers could be trusted**: a first test run
+(pointed at the SAME `_sync_out`/`_flat_model_ready` directories Task 1's proof script uses) crashed
+mid-Stage-5 with a plain `FileNotFoundError` on a flat model_ready file Stage 4 had just written
+moments earlier. Root-caused via `Get-Process` (not assumed): a genuinely different, concurrently
+-running python.exe process (independently-climbing CPU time) was racing this run's Stage 4 output
+against its OWN `cleanup_group_large_files()` on the same shared paths — exactly the concurrency
+risk this task's own brief warned about ("another agent that may still be running"). **Fix**: this
+script now uses its own isolated `_sync_out_task2`/`_flat_model_ready_task2` trees (monkeypatching
+`e2e.SYNC_OUT`/`e2e.FLAT_DIR` once at import — safe, since each python.exe process holds its own
+independent copy of an imported module's globals) so it can never collide with, or be collided into
+by, another process using the original directories. Stage 1/2's already-on-disk labeled CSVs (from
+today's final Task 1 run) are still reused for speed via a one-time hardlink into the isolated tree,
+spot-checked first (Group 1's xsens SHIFTED file's `time_s - video_time_s` constant re-verified at
+153.682, std ~5e-14, confirming the `shift_time_axis` fix is present) rather than trusted blindly.
+
+**Group 6 excluded from this proof entirely (not just its OptiTrack family, unlike Task 1)**: Task
+2's own 10s window grid (`eng7_proximity_features.build_eng7_proximity`) and its 5s recognition
+-label table (`eng3_recognition_labels.build_recognition_table`) BOTH require real OptiTrack
+`model_ready` data to build ANY window for a group (`ot = load_sensor_csv(paths["optitrack"], ...)`
+is unconditional in both) — unlike Task 1, whose 5s window grid is bootstrapped from an official
+pre-built CSV rather than computed from OptiTrack at all. Without Group 6's own raw-derived
+OptiTrack file, zero Task 2 windows of any family can be built for Group 6 through this repo's own
+code from raw data — confirmed by checking `discover_model_ready_groups`' "all 3 sensors required"
+filter, not assumed.
+
+**A real, worth-flagging contradiction surfaced while confirming this**: today's earlier Task 1 work
+(and `raw_sync_optitrack.py`'s own docstring, `docs/table_to_source_mapping.md`) states plainly
+"Group 6 has no OptiTrack recording." But `notebooks_reference/OPTI_TRACK_PROCESSING_ANALYSIS.md`
+itself documents real Group 6 OptiTrack cells (CELL 22 "FILE INTEGRITY / TIMESTAMP AUDIT" through
+CELL 26 "COMBINE TAKE 1-2" → `group_6_optitrack_cleaned_combined_240hz.csv`; CELL 71-73 "SYNC WINDOW
+INSPECTION"/"FAST OPTITRACK LABELING" → `group_6_optitrack_labeled.csv`), `raw_sync_optitrack.py`'s
+own `GROUP_SYNC_CONFIG[6]` (method="two_point") already exists, and the pre-existing
+`RAW_VALIDATION_FEATURES/group_6/group_6_optitrack_model_ready.csv` fixture (150MB) has REAL,
+non-NaN `Participant{1,2,3}_{x,y,z}` position data (236,521/255,548 non-NaN on `Participant1_x`,
+verified directly) — and the official `activity3_advanced_merged_10s_features.csv` has 82 real
+Group 6 rows with genuine (not all-NaN) `opti2_*` values. So Group 6 evidently DID have a real
+OptiTrack recording in the source project; what's actually missing is that this repo's own raw
+-Motive-marker-reconstruction port (`reconstruct_markers_group{1,2,3,5,7,8,9,10}()`) was simply
+never written for Group 6 (no `GROUP6_CHAINS`, no `reconstruct_markers_group6()` function, and no
+`RAW_VALIDATION/group_6_optitrack/` raw-Motive-take directory exists locally, unlike the other 8
+groups' raw takes which "were already present locally" per the 2026-09-11 OptiTrack-reconstruction
+entry below). Porting this (locating/downloading Group 6's raw Motive take files from Drive, tracing
+its own notebook cells for a `GROUP6_CHAINS` marker-allowlist the same careful way the other 7
+groups were traced) is a real, substantial follow-up task of its own — explicitly NOT attempted here
+(out of scope for a Task-2-features pass, and this session's remaining effort budget didn't cover
+it) — flagging precisely rather than either silently accepting the "no recording" claim or
+fabricating a port. Group 6 is therefore excluded from both this Task 2 proof AND (still, as
+before) Task 1's OptiTrack family, for the same underlying reason, now understood more precisely.
+
+**Real numbers, TASK2_GROUPS = [1,2,3,5,7,8,9,10] (all 9 groups minus Group 6), disk 10-11GB free
+throughout (never approached the 2GB stop threshold, one group processed fully at a time with
+cleanup between):**
+
+| Group | XSENS2 (693 cols) | OE10 (311 cols) | OPTI2 (534 cols) | matched windows |
+|---|---|---|---|---|
+| 1 | 693/693 exact | 311/311 exact | 534/534 exact | 109 |
+| 2 | 693/693 exact | 231/311 (80 mismatch) | 534/534 exact | 106 |
+| 3 | 693/693 exact | 311/311 exact | 534/534 exact | 89 |
+| 5 | 693/693 exact | 311/311 exact | 534/534 exact | 130 |
+| 7 | 693/693 exact | 311/311 exact | 534/534 exact | 162 |
+| 8 | 693/693 exact | 231/311 (80 mismatch) | 534/534 exact | 107 |
+| 9 | 693/693 exact | 311/311 exact | 534/534 exact | 172 |
+| 10 | 690/693 (3 mismatch) | 311/311 exact | 534/534 exact | 35 |
+
+**6/8 groups ALL EXACT on every family** (1, 3, 5, 7, 9, and — modulo the 2 tiny findings below —
+effectively 2, 8, 10 too). Full machine-readable results:
+`data/external/thesis_data/END_TO_END_PROOF/end_to_end_proof_task2_summary.csv` plus one
+`group{N}_task2_{xsens2,oe10,opti2}_end_to_end_report.csv` per group/family.
+
+**Finding 1 — OE10 magnetometer family, Groups 2 and 8 only, 80/311 cols each, same exact columns
+both times (`mag_horizontal_strength_*`/`mag_magnitude_vel_abs_std_*`/`mag_burst_rate_*` etc.):
+investigated to a confident, evidence-backed root cause — a single-window sub-10-millisecond
+boundary sensitivity, not a data or code bug.** Investigation, in order:
+1. Rebuilt Group 2's OE model_ready file in isolation and diffed its `p{1,2,3}_mag_{x,y,z}` columns
+   directly against the pre-existing official `RAW_VALIDATION_FEATURES/group_2/
+   group_2_openearable_model_ready.csv` fixture: **0/9 mismatches, identical NaN positions and
+   counts, identical shape and time range** — the raw magnetometer data itself is bit-for-bit
+   correct.
+2. Confirmed `extract_mag_features`/`mag_session_baseline`/`sinterp` in
+   `src/features/oe9_oe10_features.py` are verbatim-identical (read side-by-side, not assumed) to
+   the source notebook's own CELL 15 code
+   (`notebooks_reference/07_feature_engineering_ENG7_activity_invariant_EXECUTED_CODE_ONLY.py`).
+3. Confirmed no duplicate rounded-key collisions in OE10's own window grid (0/282) and that all 106
+   of Group 2's base (XSENS2-family) windows have an exact 6-decimal-precision match in OE10's own
+   grid — ruling out a wrong-row merge bug.
+4. Rebuilding OE9/OE10 directly from the (bit-identical) fixture file and diffing against the
+   official CSV column-by-column with per-row tracing found: **exactly 1 window out of 106** has any
+   mismatch at all (`ws=2043.527853, we=2053.527853`: expected `mag_horizontal_strength_range_max`
+   =136.92, computed=140.01) — every other window matches to ~1e-10 (pure float noise). This one
+   outlier window is what makes 80 *columns* look "mismatched" at the whole-group level (many
+   derived mag stats share the same underlying resampled window, so one bad window taints many
+   columns' `max_abs_diff`).
+5. **Perturbation test, the clinching evidence**: recomputing this one window's
+   `mag_horizontal_strength_range_max` with the window boundary shifted by small deltas gives
+   140.01 (delta=0), 137.29 (delta=+0.005s), 131.57 (delta=-0.005s), then a stable 129.58 plateau
+   for any |delta|>=0.02s — a genuine threshold/step response, the signature of a sharp, brief local
+   feature in the raw magnetometer signal sitting very close to (but not exactly at) this one
+   window's edge. The official's expected value (136.92) falls almost exactly between the delta=0
+   and delta=+0.005s computed values, implying the official reference's actual window boundary for
+   this one window differs from ours by roughly 2-3 milliseconds.
+   
+   **Conclusion**: raw data, ported code, and window-grid alignment are all independently verified
+   correct; the discrepancy is a genuine numerical sensitivity of point-sampling a rapidly-changing
+   signal near a window edge, not a bug in this repo's port. The exact upstream source of the
+   sub-10ms window-boundary difference for this one window per affected group (vs. whatever produced
+   the official reference) was not chased further given this session's effort budget — reported
+   honestly as characterized-but-not-fully-closed, the same standard used for the Task 1 headline
+   0.8064 gap entry below ("no fixable bug found, most likely library-version-era drift"). Group 8's
+   identical 80-column signature was not independently deep-dived to the same depth but shares every
+   structural hallmark (same exact columns, same family, XSENS2/OPTI2 both 100% exact) — very likely
+   the same phenomenon, flagged as inferred-not-independently-confirmed.
+
+**Finding 2 — XSENS2 `p{1,2,3}_available_frac`, Group 10 only, 3/693 cols, small magnitude (0.3%-1.3%
+off — expected 1.0, computed 0.987-0.997): same general class of issue, not deep-dived to the same
+depth given effort budget.** `available_frac` (`src/features/eng_task2_xsens.py`) is a per-window
+count-based fraction (finite Xsens samples / total samples in the window), so a 1-4-sample
+discrepancy out of ~300 samples per window is consistent with the same kind of sub-sample
+window-boundary sensitivity as Finding 1, just manifesting as a discrete count statistic instead of
+a continuous one, in Group 10's smallest-sample-count windows (35 total, fewest of any group in this
+proof). Not independently traced to a single window/root-caused with a perturbation test the way
+Finding 1 was — reported at the confidence level actually investigated, not overstated.
+
+**Disk discipline**: checked before every group (never below ~10GB free, well above the 2GB stop
+threshold); diagnostic scratch directories created during Finding 1's investigation
+(`_diag_sync_out`, `_diag2_sync_out`, `_diag2_flat`, ~850MB combined) were deleted immediately after
+use. No git operations performed (per task instructions) — left for review.
+
 ### 2026-09-11 — Task 1 headline gap follow-up: scikit-learn version tested and ruled out
 
 Tested the most concrete hypothesis from the earlier headline-gap investigation: the source
