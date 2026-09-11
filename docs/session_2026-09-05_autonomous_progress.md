@@ -46,6 +46,82 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — OptiTrack raw marker reconstruction, Groups 2/3/5/7/8/9/10: all 7 remaining groups ported and validated bit-for-bit exact against real raw Motive takes; the Group-1-vs-others reconstruction shape genuinely differs and was NOT assumed to transfer
+Continuing the 2026-09-10/11 Group 1 closure (entry below): each of the 7 remaining groups'
+OWN cells in `OPTI_TRACK_PROCESSING.ipynb` were read in order via `json.load` (not grep, not
+assumed from Group 1's structure or from each other) — full per-cell trace is in
+`notebooks_reference/OPTI_TRACK_PROCESSING_ANALYSIS.md`'s outline section, which turned out to
+already exist with the exact cell numbers pre-mapped (huge time savings; independently confirmed
+the CHAINS dicts and combine-cell logic by reading the raw code, not trusting the analysis doc's
+prose alone).
+
+**Real shape differences found, none assumed:** Groups 2/3/5 each have exactly ONE "MANUAL
+TRACKLET STITCHING" cell (no update/revision pass) and their real combined-file output has **no**
+`optitrack_quality_note` column at all. Groups 7/8 each add a "GAP CANDIDATE INSPECTION" cell
+after the stitching cell, but it's diagnostic-only (writes to a different, never-read `OUT_DIR`,
+confirmed directly) — the original stitching-cell CHAINS is what the combine cell actually
+consumes — and both groups' real output DOES have `optitrack_quality_note` (verified against the
+real fixture headers before assuming either way). Groups 9/10 each have a genuine "MANUAL TRACKLET
+STITCHING UPDATED" cell that overwrites the same `OUT_DIR` as the first-pass cell (confirmed by
+comparing both cells' `OUT_DIR` strings) — this revised CHAINS (not the first pass) is what
+actually reaches the combined file. Group 10 additionally has the previously-flagged "duplicate
+COMBINE TAKE 1-3 cell" (CELL 49/50) — diffed directly, byte-identical, confirmed harmless (an
+accidental rerun, not a divergent revision). All 7 groups share the same
+`read_motive_long_and_frame_time`/`build_stitched_clean`/`smooth_short_gaps` helpers (byte-identical
+across every cell checked) and the same combine mechanism (concat with a literal hardcoded
+per-take offset from real Motive "Capture Start Time" metadata, take_1 always 0.000, then
+recompute availability) — genuinely shared, so ported as one parameterized
+`reconstruct_markers_multi_take()` plus per-group CHAINS/offset/quality-note config, rather than
+6 more near-duplicate functions.
+
+**Raw take files needed no downloading** — all of groups 2/3/5/7/8/9/10's raw Motive take exports
+(`Arda_Group_N_Take_*.csv` / `Arda_Group-5_Take_*.csv`) were already present locally in
+`data/raw/group_N/optitrack/` from earlier sessions, so Chrome/download budget was never touched
+and disk stayed flat at ~9.5GB free throughout (checked before and after: no change, since nothing
+new was written to disk — validation ran in-memory against the existing
+`RAW_VALIDATION/group_N_optitrack/.../optitrack_final/group_N_optitrack_cleaned_combined_240hz.csv`
+fixtures).
+
+**Validation results, real numbers, every group bit-for-bit exact (0 mismatches) against the
+already-known-good combined-240Hz fixture:**
+
+| Group | Takes | Rows | Cols | Mismatches |
+|---|---|---|---|---|
+| 2 | 5 | 645,503 | 20 | 0 |
+| 3 | 5 | 643,885 | 20 | 0 |
+| 5 | 5 | 820,200 | 20 | 0 |
+| 7 | 4 | 731,083 | 21 | 0 |
+| 8 | 5 | 668,173 | 21 | 0 |
+| 9 | 6 | 880,464 | 21 | 0 |
+| 10 | 3 | 359,887 | 21 | 0 |
+
+(Group 7's first validation run showed a false-positive 585,120-row mismatch on
+`optitrack_quality_note` alone — the real fixture's empty notes round-trip through `to_csv`/
+`read_csv` as NaN, not `""`, while the port writes literal `""`; fixed the validator to normalize
+NaN/"" before comparing, re-ran, 0 real mismatches. Not a code bug in the port itself, a
+comparison-script artifact — flagged here so it isn't mistaken for a silently-swept-under-the-rug
+issue.)
+
+Ported as `reconstruct_markers_multi_take()` + `reconstruct_markers_group{2,3,5,7,8,9,10}()` +
+per-group `GROUP{N}_CHAINS`/`GROUP{N}_TAKE_OFFSETS_S`/`GROUP{N}_QUALITY_NOTES` constants in
+`src/preprocessing/raw_sync_optitrack.py`.
+
+**What this closes:** all 9 study groups' OptiTrack raw-marker-reconstruction step (Group 1 done
+2026-09-10/11, these 7 today) now have a real, validated, bit-for-bit-exact code path from the true
+raw Motive export straight through to `group_N_optitrack_cleaned_combined_240hz.csv` — the single
+least-automatable step in the whole OptiTrack pipeline (hand-curated per-group/per-take marker
+allowlists) is now preserved as runnable, verified code for every group that has an OptiTrack
+recording (Group 6 has none; Group 4 excluded everywhere in this repo for camera failure). This is
+upstream of the already-validated OptiTrack sync/label-transfer stage (`GROUP_SYNC_CONFIG` /
+`process_group()` in the same module) — the two stages together now form one unbroken, validated
+chain from true raw OptiTrack export to labeled 240Hz per-group CSV for all 9 groups.
+
+**Not yet done / out of scope for this entry:** wiring `reconstruct_markers_group{N}()` into
+`scripts/reproduce_pipeline.py`'s `sync` stage itself (it currently bridges OptiTrack from the
+pre-reconstructed fixture per the module's own top-of-file docstring, which now needs a follow-up
+edit noting the reconstruction is no longer strictly out of scope) — flagged, not actioned this
+session per the task's own scope (port + validate only, no orchestrator wiring, no git).
+
 ### 2026-09-11 — Task 1 headline ~0.8064 gap investigated in full: code port confirmed byte-for-byte faithful to the source notebook, notebook's own stored output proves 0.8064 is a real historical CPU execution (not a thesis-text transcription artifact), no fixable bug found — most likely explanation is Colab-era vs. current library-version drift, reported honestly as unresolved
 
 Follow-up to the entry below (same day), which first surfaced this gap and explicitly deferred it.

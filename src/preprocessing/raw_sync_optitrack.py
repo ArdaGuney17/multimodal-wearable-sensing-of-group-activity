@@ -8,18 +8,26 @@ per-group trace this module is built from (exact cell numbers, exact
 algorithms quoted verbatim, exact per-group constants, exact output
 filenames).
 
-SCOPE (see docs/table_to_source_mapping.md's "Raw sensor sync & cleaning"
-row): starts from `group_{g}/optitrack/optitrack_final/group_{g}_
-optitrack_cleaned_combined_240hz.csv` — the source notebook's own raw
-marker reconstruction pass (Hungarian-algorithm nearest-neighbor tracking
-plus hand-curated per-group/per-take tracklet-stitching `CHAINS` dicts) is
-explicitly OUT OF SCOPE, per an explicit decision documented in that doc
-row: it is the single least-automatable step in the whole project (a
-literal mapping of raw Motive "Unlabeled NNNN" marker-track IDs to
-participant identities, unique per group and per take, not derivable from
-a rule). The already-cleaned/combined file is treated as a fixed
-intermediate input, the same way `global_cleaning.py` already treats the
-`*_labeled*.csv` files it consumes.
+SCOPE: `process_group()`/`run_all()` below start from `group_{g}/
+optitrack/optitrack_final/group_{g}_optitrack_cleaned_combined_240hz.csv`
+as a fixed intermediate input (the same convention `global_cleaning.py`
+uses for its own `*_labeled*.csv` inputs) — they do NOT call the raw
+marker reconstruction functions themselves; a caller that wants the full
+raw-Motive-export-to-labeled-CSV chain must call
+`reconstruct_markers_group{1,2,3,5,7,8,9,10}()` first and pass its output
+in as `optitrack_df`. UPDATE (2026-09-10/11 + 2026-09-11): the raw marker
+reconstruction pass itself — originally believed out of scope, "the
+single least-automatable step in the whole project" (a literal mapping of
+raw Motive "Unlabeled NNNN" marker-track IDs to participant identities,
+unique per group and per take, not derivable from a rule) — has since
+been ported and validated bit-for-bit exact for ALL 9 groups that have an
+OptiTrack recording (Group 1 first, then 2/3/5/7/8/9/10; Group 6 has no
+OptiTrack recording). See `reconstruct_markers_group1()`'s docstring
+below for the Group-1 trace and `reconstruct_markers_multi_take()`'s for
+the shared mechanism the other 7 groups turned out to genuinely share.
+`scripts/reproduce_pipeline.py`'s `sync` stage still bridges OptiTrack
+from the pre-reconstructed fixture rather than calling these functions —
+wiring that up is a follow-up, not yet done as of this update.
 
 All 9 groups (1,2,3,5,6,7,8,9,10) are covered — every group's final sync
 shift in the source notebook's saved run was a **human-confirmed
@@ -344,6 +352,476 @@ def reconstruct_markers_group1(take1_path: str, take2_path: str,
         ["landmark1_available", "landmark2_available", "landmark3_available"]
     ].sum(axis=1)
     return combined
+
+
+# ================================================================
+# Raw marker-track reconstruction (Groups 2, 3, 5, 7, 8, 9, 10) --
+# ported the same way as Group 1 above: each group's OWN cells in
+# OPTI_TRACK_PROCESSING.ipynb were read in order (not assumed to share
+# Group 1's structure). Confirmed per-group, cell-by-cell, against
+# notebooks_reference/OPTI_TRACK_PROCESSING_CODE_ONLY.py:
+#
+#   Group 2  (CELL 11-13,  #11-13): single "MANUAL TRACKLET STITCHING"
+#     cell (no update/gap-inspection revision) -> "COMBINE TAKE 1-5".
+#     5 takes. No optitrack_quality_note column in the real output
+#     (confirmed against the real fixture's header).
+#   Group 3  (CELL 14-16,  #14-16): same shape as Group 2. 5 takes.
+#     No optitrack_quality_note column.
+#   Group 5  (CELL 18-20,  #17-19): same shape. 5 takes. No
+#     optitrack_quality_note column.
+#   Group 7  (CELL 28-31,  #25-28): "MANUAL TRACKLET STITCHING" -> "GAP
+#     CANDIDATE INSPECTION FOR CURRENT STITCHING" (diagnostic only --
+#     writes to a DIFFERENT OUT_DIR, optitrack_gap_candidate_inspection/,
+#     never read by the combine cell's own IN_DIR, confirmed directly) ->
+#     "COMBINE TAKE 1-4", which adds an `optitrack_quality_note` text
+#     column (verified present in the real fixture's header). 4 takes.
+#   Group 8  (CELL 33-36,  #29-32): same shape as Group 7 (one stitching
+#     cell + one diagnostic-only gap-inspection cell) -> "COMBINE TAKE
+#     1-5" with optitrack_quality_note (3 per-take notes). 5 takes.
+#   Group 9  (CELL 38-43,  #33-38): "MANUAL TRACKLET STITCHING" (first
+#     pass -- take_5 chains explicitly flagged "approximate" in the
+#     cell's own comment, inspection output was truncated) -> two
+#     diagnostic-only cells ("FOCUSED MARKER SUMMARY FOR TAKE 5 AND
+#     TAKE 6", "FOCUSED GAP CANDIDATE INSPECTION") -> "MANUAL TRACKLET
+#     STITCHING UPDATED", which writes to the SAME OUT_DIR as the
+#     first-pass cell (overwriting it, confirmed by comparing both
+#     cells' OUT_DIR strings) -- this revised CHAINS (take_2 landmark3
+#     +Unlabeled 2532, take_5 landmark1 +Unlabeled 2908, take_6
+#     unchanged) is what the combine cell actually consumes. -> "COMBINE
+#     TAKE 1-6" with optitrack_quality_note (3 per-take notes). 6 takes.
+#   Group 10 (CELL 45-50,  #39-44): same update pattern as Group 9
+#     ("MANUAL TRACKLET STITCHING" -> diagnostic "FOCUSED GAP CANDIDATE
+#     INSPECTION" -> "MANUAL TRACKLET STITCHING UPDATED", same OUT_DIR,
+#     supersedes) -> "COMBINE TAKE 1-3" -- which then appears TWICE in
+#     immediate succession (CELL 49 #43 and CELL 50 #44); diffed
+#     directly line-by-line, confirmed byte-identical (same
+#     TAKE_OFFSETS_S, same quality-note text, same out_path) -- an
+#     accidental cell re-run left in the saved notebook, not a
+#     divergent revision; harmless since it's a deterministic rerun.
+#     optitrack_quality_note present (2 per-take notes). 3 takes.
+#
+# Genuinely shared mechanism across all 7 groups (verified by reading
+# every cell, not assumed): each group's own
+# `read_motive_long_and_frame_time`/`build_stitched_clean`/
+# `smooth_short_gaps` are byte-identical to Group 1's (and to each
+# other's -- checked directly, same defaults limit=10/window=5),
+# applied per-take, then concatenated with a LITERAL per-take
+# capture-start offset (`TAKE_OFFSETS_S`, hardcoded from each take's
+# real Motive "Capture Start Time" metadata) and combined-file
+# availability recomputed -- this offset style differs from Group 1's
+# own "single TAKE2_OFFSET_S added to take_2 only" shape (Group 1 only
+# has 2 takes; every other group's combine cell instead hardcodes one
+# absolute offset per take, take_1's always 0.000). Only the per-take
+# marker-name CHAINS (unique per group/take, hand-curated) and the
+# offsets/quality-notes differ across groups -- ported below as one
+# shared `reconstruct_markers_multi_take()` parameterized by those, with
+# per-group config in `GROUP_RECONSTRUCTION_CONFIG` and thin per-group
+# wrapper functions for the naming convention used elsewhere in this
+# module.
+# ================================================================
+
+GROUP2_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1163"],
+        "landmark2": ["Unlabeled 1164", "Unlabeled 1178"],
+        "landmark3": ["Unlabeled 1165", "Unlabeled 1168", "Unlabeled 1169", "Unlabeled 1170",
+                      "Unlabeled 1181", "Unlabeled 1182"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1259"],
+        "landmark2": ["Unlabeled 1257"],
+        "landmark3": ["Unlabeled 1256", "Unlabeled 1260", "Unlabeled 1265", "Unlabeled 1268"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 1307"],
+        "landmark2": ["Unlabeled 1308", "Unlabeled 1312", "Unlabeled 1314"],
+        "landmark3": ["Unlabeled 1309", "Unlabeled 1310", "Unlabeled 1311", "Unlabeled 1313"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 1353", "Unlabeled 1356", "Unlabeled 1361", "Unlabeled 1363"],
+        "landmark2": ["Unlabeled 1354", "Unlabeled 1357", "Unlabeled 1362"],
+        "landmark3": ["Unlabeled 1352", "Unlabeled 1358"],
+    },
+    "take_5": {
+        "landmark1": ["Unlabeled 1386"],
+        "landmark2": ["Unlabeled 1387"],
+        "landmark3": ["Unlabeled 1388", "Unlabeled 1392"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 13):
+# Take 1: 2026-04-21 14:18:05.206 / Take 2: 14:28:08.543 / Take 3: 14:38:16.803 /
+# Take 4: 14:48:22.744 / Take 5: 14:58:28.830
+GROUP2_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 603.337, "take_3": 1211.597,
+                          "take_4": 1817.538, "take_5": 2423.624}
+
+GROUP3_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1202"],
+        "landmark2": ["Unlabeled 1201", "Unlabeled 1227"],
+        "landmark3": ["Unlabeled 1203", "Unlabeled 1225", "Unlabeled 1228", "Unlabeled 1230"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1287"],
+        "landmark2": ["Unlabeled 1288"],
+        "landmark3": ["Unlabeled 1286", "Unlabeled 1308"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 1352"],
+        "landmark2": ["Unlabeled 1351", "Unlabeled 1360", "Unlabeled 1363", "Unlabeled 1366",
+                      "Unlabeled 1367", "Unlabeled 1369", "Unlabeled 1370"],
+        "landmark3": ["Unlabeled 1353", "Unlabeled 1357"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 1460", "Unlabeled 1493"],
+        "landmark2": ["Unlabeled 1462", "Unlabeled 1478", "Unlabeled 1487", "Unlabeled 1492",
+                      "Unlabeled 1499"],
+        "landmark3": ["Unlabeled 1461", "Unlabeled 1466", "Unlabeled 1468", "Unlabeled 1476",
+                      "Unlabeled 1485", "Unlabeled 1486"],
+    },
+    "take_5": {
+        "landmark1": ["Unlabeled 1520"],
+        "landmark2": ["Unlabeled 1521"],
+        "landmark3": ["Unlabeled 1522"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 16):
+# Take 1: 2026-04-22 14:33:14.209 / Take 2: 14:43:30.161 / Take 3: 14:53:39.149 /
+# Take 4: 15:03:56.360 / Take 5: 15:16:01.878
+GROUP3_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 615.952, "take_3": 1224.940,
+                          "take_4": 1842.151, "take_5": 2567.669}
+
+GROUP5_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1317"],
+        "landmark2": ["Unlabeled 1318", "Unlabeled 1322", "Unlabeled 1339", "Unlabeled 1340",
+                      "Unlabeled 1341", "Unlabeled 1344", "Unlabeled 1345", "Unlabeled 1348",
+                      "Unlabeled 1350", "Unlabeled 1351"],
+        "landmark3": ["Unlabeled 1319", "Unlabeled 1320", "Unlabeled 1323", "Unlabeled 1327",
+                      "Unlabeled 1329", "Unlabeled 1331", "Unlabeled 1338"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1412"],
+        "landmark2": ["Unlabeled 1413"],
+        "landmark3": ["Unlabeled 1411", "Unlabeled 1414", "Unlabeled 1415", "Unlabeled 1416",
+                      "Unlabeled 1417", "Unlabeled 1418", "Unlabeled 1419", "Unlabeled 1420",
+                      "Unlabeled 1425", "Unlabeled 1426", "Unlabeled 1427", "Unlabeled 1428",
+                      "Unlabeled 1429", "Unlabeled 1430", "Unlabeled 1431", "Unlabeled 1433",
+                      "Unlabeled 1434", "Unlabeled 1435", "Unlabeled 1438", "Unlabeled 1439"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 1522"],
+        "landmark2": ["Unlabeled 1523", "Unlabeled 1551"],
+        "landmark3": ["Unlabeled 1524", "Unlabeled 1527", "Unlabeled 1530", "Unlabeled 1533",
+                      "Unlabeled 1534", "Unlabeled 1535", "Unlabeled 1536", "Unlabeled 1537",
+                      "Unlabeled 1538", "Unlabeled 1539", "Unlabeled 1540", "Unlabeled 1541",
+                      "Unlabeled 1542", "Unlabeled 1549", "Unlabeled 1554", "Unlabeled 1556"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 1644", "Unlabeled 1668", "Unlabeled 1672", "Unlabeled 1677",
+                      "Unlabeled 1678"],
+        "landmark2": ["Unlabeled 1645", "Unlabeled 1647", "Unlabeled 1654", "Unlabeled 1667"],
+        "landmark3": ["Unlabeled 1646", "Unlabeled 1657", "Unlabeled 1662", "Unlabeled 1666",
+                      "Unlabeled 1674", "Unlabeled 1675", "Unlabeled 1680"],
+    },
+    "take_5": {
+        "landmark1": ["Unlabeled 1751"],
+        "landmark2": ["Unlabeled 1752"],
+        "landmark3": ["Unlabeled 1754", "Unlabeled 1756"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 20):
+# Take 1: 2026-04-23 13:20:45.737 / Take 2: 13:33:20.518 / Take 3: 13:43:29.474 /
+# Take 4: 13:53:41.450 / Take 5: 14:07:08.483
+GROUP5_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 754.781, "take_3": 1363.737,
+                          "take_4": 1975.713, "take_5": 2782.746}
+
+GROUP7_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1216"],
+        "landmark2": ["Unlabeled 1218"],
+        "landmark3": ["Unlabeled 1220", "Unlabeled 1221", "Unlabeled 1226"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1406"],
+        "landmark2": ["Unlabeled 1404", "Unlabeled 1408", "Unlabeled 1414", "Unlabeled 1416",
+                      "Unlabeled 1433"],
+        "landmark3": ["Unlabeled 1405", "Unlabeled 1411", "Unlabeled 1412", "Unlabeled 1417",
+                      "Unlabeled 1425", "Unlabeled 1430"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 1483", "Unlabeled 1494", "Unlabeled 1496"],
+        "landmark2": ["Unlabeled 1484", "Unlabeled 1491", "Unlabeled 1499"],
+        "landmark3": ["Unlabeled 1482", "Unlabeled 1492", "Unlabeled 1495", "Unlabeled 1497",
+                      "Unlabeled 1502", "Unlabeled 1503"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 1289", "Unlabeled 1303", "Unlabeled 1304", "Unlabeled 1307",
+                      "Unlabeled 1308", "Unlabeled 1320", "Unlabeled 1333", "Unlabeled 1337",
+                      "Unlabeled 1338"],
+        "landmark2": ["Unlabeled 1291", "Unlabeled 1293", "Unlabeled 1298", "Unlabeled 1315",
+                      "Unlabeled 1324", "Unlabeled 1328", "Unlabeled 1329"],
+        "landmark3": ["Unlabeled 1292", "Unlabeled 1294", "Unlabeled 1295", "Unlabeled 1301",
+                      "Unlabeled 1302", "Unlabeled 1314", "Unlabeled 1316", "Unlabeled 1334",
+                      "Unlabeled 1339", "Unlabeled 1342"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 31):
+# Take 1: 2026-04-29 12:35:49.872 / Take 2: 12:46:00.195 / Take 3: 12:56:17.972 /
+# Take 4: 13:07:50.337
+GROUP7_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 610.323, "take_3": 1228.100,
+                          "take_4": 1920.465}
+GROUP7_QUALITY_NOTES = {
+    "take_2": "Take 2 has weak Landmark 2 availability; large gap was not force-filled.",
+}
+
+GROUP8_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 1657"],
+        "landmark2": ["Unlabeled 1658", "Unlabeled 1678", "Unlabeled 1692"],
+        "landmark3": ["Unlabeled 1655", "Unlabeled 1662", "Unlabeled 1664", "Unlabeled 1665",
+                      "Unlabeled 1672", "Unlabeled 1675", "Unlabeled 1676", "Unlabeled 1679",
+                      "Unlabeled 1680", "Unlabeled 1681", "Unlabeled 1682", "Unlabeled 1684",
+                      "Unlabeled 1685", "Unlabeled 1687", "Unlabeled 1688", "Unlabeled 1689",
+                      "Unlabeled 1690", "Unlabeled 1691"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 1782"],
+        "landmark2": ["Unlabeled 1783", "Unlabeled 1790", "Unlabeled 1802", "Unlabeled 1823"],
+        "landmark3": ["Unlabeled 1781", "Unlabeled 1784", "Unlabeled 1785", "Unlabeled 1786",
+                      "Unlabeled 1787", "Unlabeled 1789", "Unlabeled 1791", "Unlabeled 1792",
+                      "Unlabeled 1793", "Unlabeled 1796", "Unlabeled 1797", "Unlabeled 1798",
+                      "Unlabeled 1801", "Unlabeled 1808", "Unlabeled 1809", "Unlabeled 1810",
+                      "Unlabeled 1811", "Unlabeled 1813", "Unlabeled 1814", "Unlabeled 1815",
+                      "Unlabeled 1817", "Unlabeled 1821", "Unlabeled 1822"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 1992", "Unlabeled 2015", "Unlabeled 2053"],
+        "landmark2": ["Unlabeled 1991", "Unlabeled 1994", "Unlabeled 1995", "Unlabeled 2011",
+                      "Unlabeled 2043", "Unlabeled 2062", "Unlabeled 2063", "Unlabeled 2074"],
+        "landmark3": ["Unlabeled 1993", "Unlabeled 1996", "Unlabeled 1997", "Unlabeled 1998",
+                      "Unlabeled 1999", "Unlabeled 2000", "Unlabeled 2004", "Unlabeled 2007",
+                      "Unlabeled 2008", "Unlabeled 2020", "Unlabeled 2021", "Unlabeled 2022",
+                      "Unlabeled 2023", "Unlabeled 2024", "Unlabeled 2025", "Unlabeled 2027",
+                      "Unlabeled 2030", "Unlabeled 2031", "Unlabeled 2033", "Unlabeled 2034",
+                      "Unlabeled 2035", "Unlabeled 2036", "Unlabeled 2037", "Unlabeled 2042",
+                      "Unlabeled 2044", "Unlabeled 2045", "Unlabeled 2046", "Unlabeled 2047",
+                      "Unlabeled 2048", "Unlabeled 2050", "Unlabeled 2051", "Unlabeled 2055",
+                      "Unlabeled 2056", "Unlabeled 2060", "Unlabeled 2064", "Unlabeled 2068",
+                      "Unlabeled 2075"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 2149"],
+        "landmark2": ["Unlabeled 2142", "Unlabeled 2147", "Unlabeled 2153", "Unlabeled 2155",
+                      "Unlabeled 2161", "Unlabeled 2162", "Unlabeled 2173", "Unlabeled 2174"],
+        "landmark3": ["Unlabeled 2143", "Unlabeled 2144", "Unlabeled 2146", "Unlabeled 2148",
+                      "Unlabeled 2150", "Unlabeled 2151", "Unlabeled 2158", "Unlabeled 2160"],
+    },
+    "take_5": {
+        "landmark1": ["Unlabeled 2186"],
+        "landmark2": ["Unlabeled 2187", "Unlabeled 2189"],
+        "landmark3": ["Unlabeled 2185", "Unlabeled 2188"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 36):
+# Take 1: 2026-04-30 13:45:54.738 / Take 2: 13:56:41.954 / Take 3: 14:06:57.794 /
+# Take 4: 14:20:35.288 / Take 5: 14:28:25.432
+GROUP8_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 647.216, "take_3": 1263.056,
+                          "take_4": 2080.550, "take_5": 2550.694}
+GROUP8_QUALITY_NOTES = {
+    "take_2": "Take 2 has moderate Landmark 3 availability; weak gaps were not force-filled.",
+    "take_3": "Take 3 has weak Landmark 2 availability; long gap was not force-filled.",
+    "take_4": "Take 4 has moderate Landmark 1 and Landmark 3 availability; risky candidates were not added.",
+}
+
+# Group 9: CELL 42 ("UPDATED") CHAINS -- supersedes CELL 39's first pass
+# (see docstring above). take_5 gains Unlabeled 2908 on landmark1; take_2
+# gains Unlabeled 2532 on landmark3; take_6 unchanged.
+GROUP9_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 2310", "Unlabeled 2331"],
+        "landmark2": ["Unlabeled 2311", "Unlabeled 2317", "Unlabeled 2334", "Unlabeled 2338",
+                      "Unlabeled 2343", "Unlabeled 2345", "Unlabeled 2358", "Unlabeled 2373"],
+        "landmark3": ["Unlabeled 2335", "Unlabeled 2344", "Unlabeled 2354", "Unlabeled 2359",
+                      "Unlabeled 2371", "Unlabeled 2372"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 2479"],
+        "landmark2": ["Unlabeled 2481", "Unlabeled 2482", "Unlabeled 2493", "Unlabeled 2495",
+                      "Unlabeled 2497", "Unlabeled 2503", "Unlabeled 2525"],
+        "landmark3": ["Unlabeled 2485", "Unlabeled 2498", "Unlabeled 2501", "Unlabeled 2505",
+                      "Unlabeled 2507", "Unlabeled 2508", "Unlabeled 2511", "Unlabeled 2512",
+                      "Unlabeled 2513", "Unlabeled 2514", "Unlabeled 2516", "Unlabeled 2517",
+                      "Unlabeled 2518", "Unlabeled 2519", "Unlabeled 2521", "Unlabeled 2524",
+                      "Unlabeled 2528", "Unlabeled 2530", "Unlabeled 2532", "Unlabeled 2533"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 2605", "Unlabeled 2613", "Unlabeled 2635"],
+        "landmark2": ["Unlabeled 2604"],
+        "landmark3": ["Unlabeled 2610", "Unlabeled 2611", "Unlabeled 2612", "Unlabeled 2616",
+                      "Unlabeled 2617", "Unlabeled 2618", "Unlabeled 2620", "Unlabeled 2621",
+                      "Unlabeled 2623", "Unlabeled 2624", "Unlabeled 2625", "Unlabeled 2626",
+                      "Unlabeled 2627", "Unlabeled 2630"],
+    },
+    "take_4": {
+        "landmark1": ["Unlabeled 2732", "Unlabeled 2759", "Unlabeled 2768", "Unlabeled 2771"],
+        "landmark2": ["Unlabeled 2731", "Unlabeled 2763", "Unlabeled 2767", "Unlabeled 2770"],
+        "landmark3": ["Unlabeled 2733", "Unlabeled 2743", "Unlabeled 2744", "Unlabeled 2747",
+                      "Unlabeled 2752", "Unlabeled 2754", "Unlabeled 2758", "Unlabeled 2769",
+                      "Unlabeled 2774"],
+    },
+    "take_5": {
+        "landmark1": ["Unlabeled 2904", "Unlabeled 2908", "Unlabeled 2910", "Unlabeled 2920",
+                      "Unlabeled 2925", "Unlabeled 2929"],
+        "landmark2": ["Unlabeled 2903", "Unlabeled 2916", "Unlabeled 2922", "Unlabeled 2924"],
+        "landmark3": ["Unlabeled 2905", "Unlabeled 2906", "Unlabeled 2907", "Unlabeled 2912",
+                      "Unlabeled 2914", "Unlabeled 2915", "Unlabeled 2919"],
+    },
+    "take_6": {
+        "landmark1": ["Unlabeled 3031"],
+        "landmark2": ["Unlabeled 3032", "Unlabeled 3060", "Unlabeled 3062"],
+        "landmark3": ["Unlabeled 3033", "Unlabeled 3061"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 43):
+# Take 1: 2026-04-30 15:42:50.664 / Take 2: 15:53:22.735 / Take 3: 16:04:25.584 /
+# Take 4: 16:15:00.610 / Take 5: 16:30:24.858 / Take 6: 16:41:25.186
+GROUP9_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 632.071, "take_3": 1294.920,
+                          "take_4": 1929.946, "take_5": 2854.194, "take_6": 3514.522}
+GROUP9_QUALITY_NOTES = {
+    "take_1": "Take 1 has weak Landmark 3 availability; large missing interval was not force-filled.",
+    "take_2": "Take 2 has weak/moderate Landmark 3 availability; only safe short candidate was added.",
+    "take_6": "Take 6 has weak Landmark 1 availability; no safe successor candidate was found.",
+}
+
+# Group 10: CELL 48 ("UPDATED") CHAINS -- supersedes CELL 46's first pass.
+# take_1 landmark2 gains 3115/3119/3123/3124/3129; take_2 landmark1 gains
+# 3187/3188; take_3 landmark1 unchanged (no safe candidate found).
+GROUP10_CHAINS: dict[str, dict[str, list[str]]] = {
+    "take_1": {
+        "landmark1": ["Unlabeled 3113", "Unlabeled 3122", "Unlabeled 3128"],
+        "landmark2": ["Unlabeled 3115", "Unlabeled 3119", "Unlabeled 3120", "Unlabeled 3123",
+                      "Unlabeled 3124", "Unlabeled 3125", "Unlabeled 3126", "Unlabeled 3127",
+                      "Unlabeled 3129", "Unlabeled 3130", "Unlabeled 3132", "Unlabeled 3136"],
+        "landmark3": ["Unlabeled 3118", "Unlabeled 3131", "Unlabeled 3133", "Unlabeled 3134",
+                      "Unlabeled 3135"],
+    },
+    "take_2": {
+        "landmark1": ["Unlabeled 3176", "Unlabeled 3186", "Unlabeled 3187", "Unlabeled 3188",
+                      "Unlabeled 3193"],
+        "landmark2": ["Unlabeled 3177", "Unlabeled 3180"],
+        "landmark3": ["Unlabeled 3178", "Unlabeled 3183", "Unlabeled 3184", "Unlabeled 3185",
+                      "Unlabeled 3190", "Unlabeled 3192"],
+    },
+    "take_3": {
+        "landmark1": ["Unlabeled 3251", "Unlabeled 3256"],
+        "landmark2": ["Unlabeled 3252", "Unlabeled 3254", "Unlabeled 3257", "Unlabeled 3258",
+                      "Unlabeled 3260"],
+        "landmark3": ["Unlabeled 3253", "Unlabeled 3259", "Unlabeled 3261", "Unlabeled 3266",
+                      "Unlabeled 3267", "Unlabeled 3268"],
+    },
+}
+# Real offsets from Take 1 capture start (verbatim comment, CELL 49/50 --
+# byte-identical in both cells):
+# Take 1: 2026-04-30 17:43:36.632 / Take 2: 17:53:46.260 / Take 3: 18:04:00.673
+GROUP10_TAKE_OFFSETS_S = {"take_1": 0.000, "take_2": 609.628, "take_3": 1224.041}
+GROUP10_QUALITY_NOTES = {
+    "take_2": "Take 2 Landmark 1 was improved using short candidates; medium confidence around the stitched gap.",
+    "take_3": "Take 3 has weak Landmark 1 availability; no safe continuation candidate was found.",
+}
+
+
+def reconstruct_markers_multi_take(take_paths: dict[str, str], chains: dict[str, dict[str, list[str]]],
+                                    take_offsets_s: dict[str, float],
+                                    quality_notes: dict[str, str] | None = None) -> pd.DataFrame:
+    """Shared reconstruction mechanism for every group EXCEPT Group 1
+    (whose combine step instead adds one offset to a second take only,
+    see `reconstruct_markers_group1`): for each take in `take_paths`
+    (processed in dict order, matching each group's own `TAKE_PATHS`),
+    reads the raw long-format Motive export, stitches Landmark1/2/3 from
+    `chains[take_name]`, smooths short gaps, then concatenates every
+    take with its own literal `take_offsets_s[take_name]` added to
+    time_s (real per-take Motive capture-start offsets, take_1 always
+    0.000) and re-sorts by time_s, recomputing per-row landmark
+    availability on the combined frame. If `quality_notes` is given, adds
+    an `optitrack_quality_note` text column (empty string by default,
+    the given note text on rows whose `take` is a key of the dict) --
+    verbatim from each group's own "COMBINE TAKE" cell; omitted
+    entirely for groups whose real output has no such column (2, 3, 5)."""
+    stitched = {}
+    for take_name, path in take_paths.items():
+        _, frame_time, long_df = read_motive_long_and_frame_time(path)
+        clean = build_stitched_clean(frame_time, long_df, chains[take_name])
+        stitched[take_name] = smooth_short_gaps(clean)
+
+    parts = []
+    for take_name, df in stitched.items():
+        df = df.copy()
+        df["take"] = take_name
+        df["time_s_original"] = df["time_s"]
+        df["time_s"] = df["time_s_original"] + take_offsets_s[take_name]
+        parts.append(df)
+
+    combined = pd.concat(parts, ignore_index=True)
+    combined = combined.sort_values("time_s").reset_index(drop=True)
+
+    for i in (1, 2, 3):
+        cols = [f"landmark{i}_x", f"landmark{i}_y", f"landmark{i}_z"]
+        combined[f"landmark{i}_available"] = combined[cols].notna().all(axis=1)
+    combined["active_clean_landmarks"] = combined[
+        ["landmark1_available", "landmark2_available", "landmark3_available"]
+    ].sum(axis=1)
+
+    if quality_notes is not None:
+        combined["optitrack_quality_note"] = ""
+        for take_name, note in quality_notes.items():
+            combined.loc[combined["take"] == take_name, "optitrack_quality_note"] = note
+
+    return combined
+
+
+def reconstruct_markers_group2(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 2, 5 takes. Verbatim from CELL 12 + CELL 13."""
+    return reconstruct_markers_multi_take(take_paths, GROUP2_CHAINS, GROUP2_TAKE_OFFSETS_S)
+
+
+def reconstruct_markers_group3(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 3, 5 takes. Verbatim from CELL 15 + CELL 16."""
+    return reconstruct_markers_multi_take(take_paths, GROUP3_CHAINS, GROUP3_TAKE_OFFSETS_S)
+
+
+def reconstruct_markers_group5(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 5, 5 takes. Verbatim from CELL 19 + CELL 20."""
+    return reconstruct_markers_multi_take(take_paths, GROUP5_CHAINS, GROUP5_TAKE_OFFSETS_S)
+
+
+def reconstruct_markers_group7(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 7, 4 takes. Verbatim from CELL 29 + CELL 31 (CELL 30's
+    "GAP CANDIDATE INSPECTION" is diagnostic-only, confirmed not read by
+    CELL 31's IN_DIR)."""
+    return reconstruct_markers_multi_take(take_paths, GROUP7_CHAINS, GROUP7_TAKE_OFFSETS_S,
+                                           GROUP7_QUALITY_NOTES)
+
+
+def reconstruct_markers_group8(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 8, 5 takes. Verbatim from CELL 34 + CELL 36 (CELL 35's gap
+    inspection is diagnostic-only, same pattern as Group 7)."""
+    return reconstruct_markers_multi_take(take_paths, GROUP8_CHAINS, GROUP8_TAKE_OFFSETS_S,
+                                           GROUP8_QUALITY_NOTES)
+
+
+def reconstruct_markers_group9(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 9, 6 takes. Verbatim from CELL 42 (the "UPDATED" chains
+    that supersede CELL 39's first pass, same OUT_DIR) + CELL 43."""
+    return reconstruct_markers_multi_take(take_paths, GROUP9_CHAINS, GROUP9_TAKE_OFFSETS_S,
+                                           GROUP9_QUALITY_NOTES)
+
+
+def reconstruct_markers_group10(take_paths: dict[str, str]) -> pd.DataFrame:
+    """Group 10, 3 takes. Verbatim from CELL 48 (the "UPDATED" chains
+    that supersede CELL 46's first pass, same OUT_DIR) + CELL 49/50
+    (byte-identical duplicate combine cell, diffed directly)."""
+    return reconstruct_markers_multi_take(take_paths, GROUP10_CHAINS, GROUP10_TAKE_OFFSETS_S,
+                                           GROUP10_QUALITY_NOTES)
 
 
 # ================================================================
