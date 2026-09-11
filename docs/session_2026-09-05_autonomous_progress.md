@@ -46,6 +46,108 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — End-to-end proof finalized: both fixes wired into `run_end_to_end_proof.py` itself, scaled to all 9 groups, one NEW bug found+fixed along the way (Groups 8/9/10 raw ELAN not anonymized) — ALL EXACT, every group × family
+
+Continuation/completion of the same-day entry below (the one that found and fixed the Group 1 Xsens
+`video_time_s` bug and the OptiTrack identity-fix gap, but only validated both via standalone scripts
+against Groups 1-3, leaving `run_end_to_end_proof.py` itself unmodified). This pass's task: wire both
+fixes into the actual proof script, extend it to every group whose raw OE/Xsens sync is validated
+(1,2,3,5,6,7,8,9,10 per this doc's "Raw sensor sync & cleaning" row), run it for real, and report exact
+numbers — no fabricated passes.
+
+**Fix 1 wired in** — `bridge_group1_xsens_shifted()` now calls
+`shift_labeled_frame(..., shift_time_axis=True)` with a precise, documented offset:
+`153.682` (the fixture-exact `time_s − video_time_s` constant) minus `abs(_XSENS_TO_VIDEO_OFFSET_S[1])`
+(25.0) = `128.682`, expressed in the same `video_time_s` domain `shift_labeled_frame()`'s `offset_s`
+parameter already operates in for label-shifting — so ONE value drives both the label repaint and the
+new time-axis subtraction in a single, dimensionally-consistent call (the earlier same-day entry's
+"153.682 total offset" language was a time_s-domain figure; the value actually passed to the function
+needed to be netted against the 25.0 baseline first, or it would also mis-shift the labels by 25s — this
+took a bit of re-derivation to get right, confirmed against the module's own `add_xsens_video_time()`
+sign convention before wiring in). Verified: 643/643 XSENS2 columns exact for Group 1, matching the prior
+session's standalone-script result exactly.
+
+**Fix 2 wired in** — new `run_stage3b_optitrack_identity_fix()`, called from `main()` right after Stage 3
+for every group with an OptiTrack recording. Applies `global_cleaning.detect_coordinate_prefixes()` →
+`infer_left_middle_right_robust()` → `build_prefix_rename_map()` → `rename_optitrack_feature_columns()`
+(same public functions `apply_optitrack_identity_fix()` itself calls, unmodified) directly to each
+group's own nested `_sync_out` OptiTrack model_ready file, in place, before Stage 4 flattens — disk
+-cheaper than requiring a separate flat `ALL_MODEL_READY_FILES/` copy first. Group 6 (no OptiTrack
+recording) is skipped via a plain `os.path.exists()` guard, printed clearly, never raised as a failure.
+
+**Scaled to all 9 groups** (`GROUPS = [1,2,3,5,6,7,8,9,10]`, `OPTITRACK_GROUPS` = same minus 6).
+Restructured `main()` to process ONE GROUP AT A TIME through all 5 stages, record its result, then
+delete that group's large model_ready CSVs (`_sync_out`'s nested copy AND `_flat_model_ready`'s flat
+copy — `link_or_copy()` hardlinks them, so both links must be removed to actually free disk, not just
+one) before starting the next group; free disk space checked before every group (2GB stop threshold,
+never hit — disk ranged 9.3-11.5GB free throughout both runs). `run_stage3_global_cleaning()` scopes
+`global_cleaning.build_model_ready_files()` to one group at a time via a temporary
+`SELECTED_FILE_NAMES` filter (saved/restored around the call) rather than editing `global_cleaning.py`.
+
+**New bug #3 found + fixed while scaling to Groups 8/9/10**: the first full 9-group run correctly
+reproduced Groups 1/2/3/5/6/7 exact (OE 458/458, XSENS2 643/643, OPTI2 403/403 every group with a
+recording — confirming both fixes generalize cleanly beyond the originally-tested 1-3), but Groups
+8/9/10 failed in Stage 1/5: Group 8 raised `"no sync-label segment found matching
+('synchronizaiton_move',)"` for both OE and Xsens; Groups 9/10 didn't raise in Stage 1 but then hit
+`KeyError: 'group'` (OE) / `FileNotFoundError: No usable Xsens source found` (Xsens) in Stage 5 — their
+OptiTrack family, by contrast, was 403/403 exact for all three, since OptiTrack's Stage 2 sources its
+ELAN from a different, already-anonymized file. Root-caused by direct inspection (not assumed):
+`RAW_VALIDATION/group_{8,9,10}/elan/Group_{g}.csv` are genuinely raw/un-anonymized — real participant
+names in the `tier` column (never written here even for diagnosis) and `"Whole Group"` with a SPACE,
+not the canonical `"Whole_Group"` — unlike Groups 1/2/3/5/6/7's own `Group_{g}.csv`, which already carry
+canonical tier text. `attach_tier_label()` exact-matches `elan_df["tier"]` against each name in the
+canonical `TIERS` list, so against these 3 groups' raw files every `label_*` column silently comes back
+entirely empty; Group 8's shift step needs `label_Whole_Group` to locate the sync segment (loud
+failure), Groups 9/10's shift configs don't need a fresh tier lookup for the shift itself
+(`sync_mid_override` / `mid_window` search still resolves numerically), so the same root cause was
+silent there until `global_cleaning.build_model_ready_files()` skipped the all-unlabeled sensor as
+`no_labeled_rows`, surfacing two stages later as a missing flat file. **Fix**: new
+`load_group_elan_df()` in the proof script — reads the raw file first; if it has no `tier ==
+"Whole_Group"` row, falls back to the already-anonymized, already individual_build-gap-filled
+`data/external/thesis_data/ELAN_RENAMED/Group_{g}_individual_build_renamed.csv` (the exact same artifact
+`raw_sync_optitrack.py`'s Stage 2 already reads for every group via `elan_renamed_path()`/
+`read_renamed_elan()` — identical headerless 9-column format, confirmed by reading it directly with
+`rs.read_raw_elan()`; also the same kind of artifact the 2026-09-06 entry below already established is
+byte-identical to Group 5's own "raw" file). No real name is written as a Python literal anywhere in the
+fix (repo-wide anonymization-boundary rule) — detection is purely structural. Confirmed a no-op for
+Groups 1/2/3/5/6/7 (their raw files do have the canonical tier, so the fallback branch never triggers)
+and confirmed Groups 8/9/10's `ELAN_RENAMED` fallback's own sync-label segments match this doc's already
+-documented values for those groups (Group 8: 123.381-127.476s and 2325.546-2328.636s; Group 9: the
+official 12.180-15.300s row) before trusting it.
+
+Since the first full run had already correctly (and safely) recorded Groups 1-7 as exact and cleaned up
+their large files, re-running everyone from scratch wasn't needed: added a `target_groups` parameter to
+`main()` (CLI: `python run_end_to_end_proof.py 8,9,10`) that filters which groups a given invocation
+processes and merges its results into the existing `end_to_end_proof_summary.csv` (replacing only the
+rows for the groups just run, keeping every other group's prior row) rather than overwriting it — used
+this to re-run only Groups 8/9/10 after the ELAN fix, avoiding ~35 minutes of redundant re-processing
+for the other 6 groups.
+
+**Final result — every group × family combo, real raw sensor files → this repo's own
+`raw_sync_oe_xsens.py`/`raw_sync_optitrack.py`/`global_cleaning.py`/`eng_task1_*.py` at every stage →
+official `binary_5s_specialized_oe_merged_all_features.csv`, zero pre-computed intermediates anywhere:
+ALL EXACT.** 26/26 applicable combos (9 groups × 3 families, minus Group 6's OptiTrack — no recording,
+correctly skipped, not failed) at 0 mismatches, 1e-6 tolerance:
+
+| Group | OE (458 cols) | XSENS2 (643 cols) | OPTI2 (403 cols) | matched windows |
+|---|---|---|---|---|
+| 1 | 458/458 exact | 643/643 exact | 403/403 exact | 366 |
+| 2 | 458/458 exact | 643/643 exact | 403/403 exact | 566 |
+| 3 | 458/458 exact | 643/643 exact | 403/403 exact | 535 |
+| 5 | 458/458 exact | 643/643 exact | 403/403 exact | 792 |
+| 6 | 458/458 exact | 643/643 exact | SKIPPED (no recording) | 274 |
+| 7 | 458/458 exact | 643/643 exact | 403/403 exact | 579 |
+| 8 | 458/458 exact | 643/643 exact | 403/403 exact | 464 |
+| 9 | 458/458 exact | 643/643 exact | 403/403 exact | 713 |
+| 10 | 458/458 exact | 643/643 exact | 403/403 exact | 290 |
+
+Full machine-readable results: `data/external/thesis_data/END_TO_END_PROOF/end_to_end_proof_summary.csv`
+(merged across both runs) plus one `group{N}_{oe,xsens,opti}_end_to_end_report.csv` per group/family (all
+empty — zero mismatch rows — consistent with the summary). Final disk free after cleanup: 9.87GB (never
+approached the 2GB stop threshold). `docs/table_to_source_mapping.md`'s "Raw sensor sync & cleaning" row
+updated with the same findings in that doc's format. No git operations performed (per task instructions)
+— left for review.
+
 ### 2026-09-11 — End-to-end chain-proof: 2 real bugs found (Group 1 Xsens all-NaN; OptiTrack all 3 groups mismatched), both fixed, both now 100% exact
 
 Continuation of the genuine end-to-end chain-proof (`data/external/thesis_data/END_TO_END_PROOF/run_end_to_end_proof.py`
