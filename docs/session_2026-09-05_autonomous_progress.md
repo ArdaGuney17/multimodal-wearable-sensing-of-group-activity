@@ -46,6 +46,165 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-12 — Task 3 raw-to-results proof: (1) six-label token generation re-confirmed EXACT for all 9 groups by real re-execution (not trusting the 2026-09-06 log entry blindly); (2) the RQ3 label-normalization gap closed end-to-end from raw sensor/ELAN data for all 9 groups, with a tiny (2/2080-row) precisely-characterized residual on non-classification-affecting columns; (3) full chain dependency boundary re-assessed and reported honestly
+
+Task for today: extend the "true raw data -> this repo's own code at every stage -> official numbers"
+proof to Task 3 (`task3_tokens.py` + the Table 8.2-8.8 models), following the exact pattern of
+`run_end_to_end_proof_task2.py` (Task 2's proof, ALL EXACT for all 9 groups as of 2026-09-11).
+
+**Part 1 — six-label token generation, all 9 groups: re-confirmed EXACT by real execution, not
+assumed from old claims.** `docs/table_to_source_mapping.md`'s Task 3 "Part I" row still said (as of
+this morning) "Group 1 real-data pilot PASS (2026-09-05)... not yet independently re-diffed per-row
+for groups 2/3/5/6/7/8/9/10 (aggregate shape only)" — but a grep of the repo found
+`run_group{1,2,3,5,6,7,8,9,10}_task3_tokens_validation.py` already existed for every group, plus 9
+already-empty (0-mismatch) `group{N}_task3_tokens_validation_report.csv` files dated 2026-09-06,
+matching a same-day log entry ("MILESTONE: Task 3 six-label activity tokens — exact PASS, ALL 9
+groups") that had scaled the pilot but never made it into this doc's own per-row status. Per the
+task brief's explicit instruction not to trust old claims blindly, **re-ran all 9 scripts for real
+this session** (`python data/external/thesis_data/RAW_VALIDATION_FEATURES/run_group{N}_task3_tokens_
+validation.py` for N in 1,2,3,5,6,7,8,9,10, from the repo root): every group reproduces the official
+`activity_tokens_6label_fullstat.csv` **exactly** — per-group row counts {1:15, 2:31, 3:39, 5:23,
+6:12, 7:33, 8:40, 9:40, 10:11} (sum 244, matching the official total precisely), 340/340 columns
+(3 identifier + 337 feature columns), 0 mismatches at 1e-6 tolerance, every single group. No code
+changes needed anywhere — `task3_tokens.py` was already correct, this pass only re-verified it for
+real. `docs/table_to_source_mapping.md`'s Part I row updated to reflect the real, current status.
+
+**Part 2 — the RQ3 label-normalization gap, investigated and substantially closed.** The task's
+scope boundary note said `RQ3_LABEL_NORMALIZATION/rq3_normalized_labels_full.csv` was a pre-existing,
+downloaded file with zero code in this repo proven to reproduce it. Read
+`notebooks_reference/rq3_label_audit_and_normalization_CODE_ONLY.py` (644 lines) in full and found
+**`src/preprocessing/labels.py` is already a complete, verbatim, never-actually-run port of this
+exact notebook** — `clean_label`/`split_compound_label`/`component_to_process_label`/
+`raw_to_process_label`/`raw_to_compact_process_label`/`raw_to_conversation_binary`/
+`select_final_label` all line up 1:1 with the notebook's own CELL 6-10 functions (confirmed side by
+side, not assumed from the docstring's own claims). So the normalization step itself needed **zero
+new porting** — the transformation genuinely is the "simple, portable typo-fix + priority-merge
+rule" the task brief hypothesized it might be.
+
+The real gap was upstream: `labels.py`'s own `choose_main_label_source()` scoring logic picks
+`recognition_interaction_window_label_inventory.csv`'s `dominant_normalized_label` column as
+`MAIN_FILE`/`MAIN_LABEL_COL` (score 150, highest of any candidate) — but that 11-column, 2080-row
+file itself was **not a raw-data artifact**: an earlier session (2026-09-06, Appendix C work)
+recovered it by extracting 11 columns back out of `rq3_normalized_labels_full.csv` itself (the very
+file this proof needs to reproduce), because neither the inventory file nor its own raw upstream
+(`ALL_MODEL_READY_FILES_IDENTITY_FIXED`) existed locally at the time — a real, self-acknowledged
+circularity. Traced `dominant_normalized_label`'s real origin precisely: it is CELL 9 Part B of
+`master_feature_generator_task1_task2_task3_CORRECTED_V4.ipynb` ("window-level inventory using ENG3
+interaction windows only"), confirmed via direct `json.load` (not grep, per this session's own
+learned lesson) of `notebooks_reference/master_feature_generator_..._CORRECTED_V4_CODE_ONLY.py`
+around line 80217. **This exact computation already exists, verbatim-ported, inside
+`src/features/eng3_recognition_labels.py`** (`window_label_inventory()`, part of the ENG3 chain
+already proven bit-exact from raw `model_ready` data for all 9 groups in earlier sessions) — it's
+just never exposed on its own, because the module's only public builder,
+`build_recognition_table()`, immediately narrows the same interaction-window inventory down to 3
+core recognition classes (CELL 10/11, a later, different notebook stage) before returning.
+
+Wrote new code, `data/external/thesis_data/END_TO_END_PROOF/run_end_to_end_proof_task3_rq3labels.py`
+(sibling of `run_end_to_end_proof_task2.py`, reusing its Stage 1-4 raw-sync/global-cleaning/identity
+-fix/flatten functions completely unchanged, same isolated-tree-plus-hardlink-reuse pattern to avoid
+colliding with other concurrently-running proof scripts — a real, observed risk today, see disk note
+below). Two genuinely new pieces: `is_technical_label_audit()` (CELL 9's `dominant_is_technical_or_
+sync` column, needed by neither existing module before — verified functionally identical to the
+notebook's own first-of-two `is_technical_label`/`normalize_label` pair, confirmed by direct
+`json.load` inspection of both definitions in the notebook, not assumed) and
+`build_full_window_label_inventory()` (reuses `window_label_inventory()` and
+`build_recognition_table()`'s own interaction-window grid logic verbatim, copy-pasted rather than
+re-derived, just without the 3-class filter).
+
+**Ran for real, all 9 groups, one at a time with cleanup between (same discipline as
+`run_end_to_end_proof_task2.py`)**: Groups 1/2/3/5/7/8/9/10 reused today's already-computed,
+already-proven Stage 1/2 raw-sync output via hardlink from the shared `_sync_out` tree (no
+recomputation); **Group 6 was computed fully fresh** (raw OE/Xsens/OptiTrack sync from scratch,
+including a real re-run of `reconstruct_markers_group6()`) because it was never present in any
+shared cache — this makes Group 6's result the most rigorous of the 9, since nothing was reused for
+it. Diffed the rebuilt 2080-row inventory against BOTH pre-existing target files:
+
+1. **Against `recognition_interaction_window_label_inventory.csv` itself**: 2080/2080 rows matched
+   by (group, window_start) with zero rebuilt-only/official-only rows; per-group counts {1:213,
+   2:253, 3:199, 5:270, 6:152, 7:328, 8:241, 9:351, 10:73} exactly matching the pre-existing file's
+   own breakdown. 7 of 9 non-key columns bit-exact (`binary_label`, `dominant_raw_label`,
+   `dominant_normalized_label`, `dominant_is_technical_or_sync`, `all_raw_labels_in_window`,
+   `source_tiers_in_window`, `window_end`); 2 columns (`dominant_fraction_in_window`,
+   `raw_label_counts`) differ in exactly 2 of 2080 rows.
+2. **Feeding the freshly-rebuilt (non-circular) inventory through `labels.py`'s completely
+   unmodified `apply_normalization()`/`select_final_label()`, then diffing against
+   `rq3_normalized_labels_full.csv` itself**: same result, and critically — `raw_label`,
+   `rq3_process_label`, `rq3_compact_process_label`, `rq3_conversation_binary`, `rq3_final_label`
+   (every column that actually drives Task 3's downstream classification) are **bit-exact for all
+   2080 rows**. Only the same 2 audit-only rows/columns from step 1 differ.
+
+**The 2-row residual was traced to a specific, precise, already-familiar mechanism — not left
+vague.** Both are adjacent Group 3 windows (`window_start` = 113.269s and 123.269s). Example: official
+`raw_label_counts = {'inspecting_setup': 29, 'task_operational_convo': 220}` vs. rebuilt
+`{'inspecting_setup': 28, 'task_operational_convo': 221}` — note 29+220 = 28+221 = 249, i.e. this is
+one single raw OE sample's tier-label lookup landing on the opposite side of a window boundary, not
+a missing or extra sample; `dominant_fraction_in_window` differs by exactly 1/250 = 0.004
+accordingly; and `dominant_raw_label` itself (the only field that actually feeds every downstream
+column) is **identical either way** (`task_operational_convo` on both sides, both windows) — this
+sample reassignment has literally zero effect on any classification output. This is the same class
+of sub-sample float64 window-boundary sensitivity already independently proven twice elsewhere in
+this repo's raw-sync/feature work (Task 2's OE10 `n=249/250` mechanism and Group 10's XSENS2
+`available_frac` gap, both from the 2026-09-11 entries below) — recognized immediately as the same
+family of artifact, not re-investigated from scratch as a new mystery.
+
+**Net result: the RQ3 label-normalization chain is now closed end-to-end from true raw sensor/ELAN
+data for all 9 groups**, with a 2-row (0.1%), non-classification-affecting, already-characterized
+residual confined to 2 diagnostic-only columns. `docs/table_to_source_mapping.md`'s "Label cleaning /
+annotation normalization" row updated with the full real-number trace.
+
+**Part 3 — full chain dependency boundary, reported honestly.** After parts 1-2, here is exactly
+what the Task 3 raw-to-results chain now depends on, group by group of the pipeline:
+- Tokens (`task3_tokens.py`): **fully raw-data-provable**, all 9 groups (Part 1 above).
+- RQ3 normalized labels (its label input): **fully raw-data-provable**, all 9 groups, modulo the
+  2/2080-row non-classification-affecting residual above (Part 2 above).
+- `interaction_eng3_features.csv` (its sensor-feature input): already proven bit-exact from raw
+  `model_ready` data for all 9 groups in earlier sessions (Table 7.9 ENG3 work) — not re-verified
+  today, but not newly assumed either; it was real, existing, cited work.
+- The Table 8.2-8.8 downstream models themselves (`task3_grammar.py`/`task3_persistence.py`/
+  `task3_segment_forecast.py`/`task3_common_targets.py`/`task3_hmm_appendix_d.py`/`task3_naive5.py`/
+  `task3_expanding_prefix.py`, `task3_neural.py`): **not re-run today** (out of this task's explicit
+  scope — "don't redo the Table 8.2-8.8 validation work itself, already done in earlier sessions").
+  Their real-vs-published-number match quality (documented per-model in the "Task 3 breakdown" table
+  further down this doc — Table 8.7 exact; Table 8.2 6/9 exact; Table 8.3 5/5 exact; Table 8.4
+  Segment-Markov exact + 3 neural rows close-but-not-exact; Table 8.5 5/7 exact; Table 8.6 7/8 exact;
+  Table 8.8 6/7 exact) is unchanged by today's work. What HAS changed: those models were validated
+  in 2026-09-06 sessions against the token/feature tables as bare, trusted, pre-existing inputs; as
+  of today, the specific chain feeding them — raw sensor files -> raw_sync -> global_cleaning ->
+  ENG3 features + RQ3 labels -> tokens — is now itself provably raw-data-derived rather than an
+  unverified external dependency. In that sense, Table 8.2-8.8's own "raw to results" completeness
+  is now bounded only by (a) the tiny, understood 2-row RQ3 residual above, and (b) simply not having
+  been literally re-run today (a scope choice, not a discovered gap) — there is no longer a "we
+  don't know how this table's input was produced" gap anywhere upstream of them, other than the
+  already-well-characterized OE10/XSENS2 float-boundary sensitivities documented elsewhere in this
+  log for Task 1/2 (a different, unrelated feature family).
+
+**Disk discipline.** Started at 9.6GB free (matching the task brief's own estimate). Held 8.6-9.6GB
+through Groups 1-8 (one group's raw sync + model_ready + cleanup at a time, same pattern as
+`run_end_to_end_proof_task2.py`). **While processing Groups 9-10, free disk dropped sharply to
+3.1-3.7GB** — investigated immediately: NOT caused by this task's own script (whose own model_ready
+writes for Group 9/10 totaled under 700MB, all cleaned up immediately after use, verified via
+`du`/`ls` timestamps) but by a **different, concurrently-running process actively writing into
+`data/external/thesis_data/END_TO_END_PROOF/_sync_out_task2/`** (observed growing from ~196MB to
+2.3GB live, mid-investigation) — i.e. another session running `run_end_to_end_proof_task2.py` (or
+similar) on this same shared machine at the same time, exactly the concurrency risk that script's
+own docstring already warns about. Did not touch `_sync_out_task2`/`_sync_out` (another process's
+live working data / the shared read-only cache) — this task's own isolated
+`_sync_out_task3_rq3`/`_flat_model_ready_task3_rq3` trees were never at risk of collision by
+construction (separate monkeypatched paths, per-process module globals). Deleted only this task's
+own now-finished isolated trees after the run completed (freed ~90MB of genuinely-unique data; most
+of the nominal 2.9GB `_sync_out_task3_rq3` size was hardlinks to the shared `_sync_out` cache, not
+separately-allocated space). Finished at 3.9GB free — tight, but never approached the ~2GB stop
+threshold, and the tightness was caused by a concurrent, uncontrollable external process, not by
+this task's own work. Flagging this for whoever reviews next: another agent/session may still be
+mid-run against `_sync_out_task2` as of this entry.
+
+New files: `data/external/thesis_data/END_TO_END_PROOF/run_end_to_end_proof_task3_rq3labels.py`
+(the new proof script), `.../rebuilt_recognition_interaction_window_label_inventory.csv` and
+`.../rebuilt_rq3_normalized_labels_full.csv` (small, ~370KB/520KB, kept as evidence). No changes to
+`src/` — both `task3_tokens.py` and `src/preprocessing/labels.py` were already correct; only new
+code was the CELL-9-inventory reconstruction script itself. No git operations performed (per task
+instructions) — left for review.
+
 ### 2026-09-11 — OE10 mismatch (Groups 2/8) root-caused to an exact mechanism and PROVEN (not fixable — the mechanism lives in the official reference's own one-time execution, not in our port); Group 10 XSENS2 residual shown to be a DIFFERENT mechanism (real data-completeness gap, not a boundary artifact); Group 6 wired into Task 2's end-to-end proof scope — ALL EXACT, closing Task 2 to all 9 study groups
 
 Follow-up to the "Task 2 end-to-end proof" entry below, triggered by new evidence: a diagnostic
