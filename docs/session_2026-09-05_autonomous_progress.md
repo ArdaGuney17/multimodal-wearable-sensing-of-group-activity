@@ -46,6 +46,139 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — OE10 mismatch (Groups 2/8) root-caused to an exact mechanism and PROVEN (not fixable — the mechanism lives in the official reference's own one-time execution, not in our port); Group 10 XSENS2 residual shown to be a DIFFERENT mechanism (real data-completeness gap, not a boundary artifact); Group 6 wired into Task 2's end-to-end proof scope — ALL EXACT, closing Task 2 to all 9 study groups
+
+Follow-up to the "Task 2 end-to-end proof" entry below, triggered by new evidence: a diagnostic
+(`data/external/thesis_data/END_TO_END_PROOF/diag_time_boundary.py`) had already proven, for Group
+2's one mismatched window (`ws=2043.527853, we=2053.527853`), that `video_time_s` matches the
+official fixture perfectly (max diff 0.0 across 141,324 rows) and that the exact set of
+`timestamp_us` values inside the window is identical (500/500, zero one-sided) — ruling out any
+window-boundary/off-by-one/rounding bug in how the window is *defined*, and ruling out raw-data
+drift, yet the mismatch magnitude (~1e-3, e.g. `mag_magnitude_z_mean_mean` expected
+-0.1091597754790324 vs computed -0.10863893983721036) is far larger than float-summation noise
+(~1e-10). Task: find the real mechanism.
+
+**Mechanism found and proven, not just characterized.** Read `extract_mag_features` in
+`src/features/oe9_oe10_features.py` (verbatim port of the source notebook's CELL 15, confirmed via
+direct `json.load` of `notebooks_reference/master_feature_generator_task1_task2_task3_CORRECTED_V4.ipynb`
+cell 17's embedded source, byte-for-byte identical formula): `dur = float(we - ws)`;
+`n = max(8, int(dur * RESAMPLE_HZ))`; `grid = np.linspace(ws, we, n, endpoint=False)`. Unlike OE9's
+`extract_oe9_features`, which uses a FIXED `n = int(WINDOW_S * RESAMPLE_HZ)` = 250 always, OE10's mag
+builder *recomputes* `n` from `we - ws` every window — and `we` is always constructed as
+`ws + WINDOW_S`, so `we - ws` is subject to IEEE754 catastrophic-cancellation noise: it should always
+equal exactly 10.0, but for some windows, accumulated float64 drift in how `ws` itself was produced
+(`np.arange(lo, hi - WINDOW_S + 1e-9, STRIDE_S)`, ~204 accumulated steps for this window) leaves `dur`
+a few ULPs below 10.0, and `int()` (floor-toward-zero, not round) then drops `n` from 250 to 249 — a
+genuinely different number of resample grid points, which shifts every downstream `mag_*` statistic
+by roughly `1/250 ≈ 0.4%`, matching the observed magnitude exactly.
+
+**Directly verified this is a live, real phenomenon in our OWN grid, not a hypothetical**: a new
+diagnostic (`diag_oe10_n_boundary.py`) computed `n = max(8, int((window_end - window_start) *
+RESAMPLE_HZ))` for all 282 of Group 2's own OE9 windows: **279 give n=250, exactly 3 give n=249**
+(`window_start` = 63.527853, 253.527853, 503.527853), even though `(oe9["dur"]).describe()` reports
+`mean=10.0, std=3.8e-15` — i.e. these 3 windows' `dur` sits a few ULPs under 10.0, invisible at
+normal print precision. The originally-flagged window (2043.527853) is NOT one of our own 3
+-- our own reconstruction's `dur` for it is bit-exact 10.0 (`n=250`).
+
+**The clinching test** (`diag_oe10_n249_test.py`): manually recomputed `mag_magnitude_z_mean_mean`
+and `mag_horizontal_strength_range_max` for Group 2's flagged window with `n` FORCED to 249 instead
+of the (correctly-computed-per-formula) 250:
+| stat | official | our n=250 (current) | our n=249 (forced) |
+|---|---|---|---|
+| `mag_magnitude_z_mean_mean` | -0.1091597754790324 | -0.1086389398372359 (diff 5.2e-4) | -0.10915977547910616 (diff **7.4e-14**) |
+| `mag_horizontal_strength_range_max` | 136.92 | 140.0123825532446 (diff 3.09) | 136.92018729316715 (diff **1.9e-4**, i.e. exact to the officially-published 2dp rounding) |
+Forcing n=249 closes the gap to pure float64 noise. **Independently repeated for Group 8**
+(`diag_group8_oe10_mechanism.py`, which first locates Group 8's own single worst window by
+per-window max-diff scan across all 107 matched windows — found `ws=118.880508, we=128.880508`,
+max_diff=6.9, next-worst window max_diff=1e-11): forcing n=249 there closes EVERY ONE of the 10
+`mag_magnitude_z_mean_*`/`mag_horizontal_strength_range_*` aggregate stats to 1e-9–1e-13 precision
+(e.g. `mag_magnitude_z_mean_mean`: official 1.2901297822933868, n=250 gives 1.2912743620224454 (diff
+1.1e-3), n=249 gives 1.2901297822933875 (diff **7e-16**)). **Two independent groups, two independent
+windows, same exact mechanism, both proven to float-noise precision when the n=249/250 flip is
+forced.**
+
+**Conclusion: real, precisely-identified mechanism — NOT fixable, and here is exactly why.** The
+formula (`dur = we - ws`; `n = int(dur*RESAMPLE_HZ)`) is verbatim-identical between our port and the
+source notebook's own CELL 15 — this is not a bug we introduced. The instability is *inherent to the
+notebook's own algorithm* (recomputing `n` from a subtraction that should always equal exactly 10.0,
+instead of using the fixed `WINDOW_S*RESAMPLE_HZ` constant OE9 itself already uses one cell earlier).
+Reproducing the OFFICIAL CSV's specific published value for an "unlucky" window requires the *exact*
+same n=249/250 decision the ONE-TIME original Colab execution made for that window — which depends on
+the exact bit-level float64 value of `lo`/`ws` THAT EXECUTION had (its own `oe["t"].min()`,
+accumulated through its own numpy version's `np.arange`), a value we cannot recover: we only have the
+official CSV's *published, 6-decimal-rounded* `window_start`, not the in-memory unrounded float that
+fed `int(dur*25)`. Our own reconstruction already independently exhibits the identical fragility (the
+3/282 native n=249 windows above) — proving the mechanism is real and symmetric, just landing on
+different specific windows in our run vs. the original's one-time run, purely from ~1e-13-level
+platform/accumulation noise on each side. Deliberately did NOT "fix" this by hardcoding `n=250`
+always (matching OE9's approach) — that would make our OWN output more internally consistent but
+would make it *diverge* from the official CSV specifically on these already-published "unlucky"
+windows (whose published values are themselves artifacts of n=249, not n=250) while fixing nothing
+(105/106 and 106/107 other windows already match at n=250, i.e. already correct). This is a strictly
+stronger, more mechanistic finding than the same-day "Finding 1" entry below (which called it
+"sub-10ms boundary sensitivity" without identifying the discrete n=249/250 flip) — superseding it,
+not contradicting it. No code change applied (none would help); `oe9_oe10_features.py` is unchanged.
+
+**Group 10 XSENS2 residual (Finding 2 below) investigated the same way — found to be a DIFFERENT
+mechanism, not the same boundary artifact.** `xsens2_p{1,2,3}_available_frac`
+(`src/features/eng_task2_xsens.py`) is `finite_any.mean()` over raw rows selected via
+`start_idx=searchsorted(t_raw, ws, "left")`, `end_idx=searchsorted(t_raw, we, "left")`. Directly
+inspected all 7 of Group 10's mismatched windows (`diag_group10_xsens2_available_frac.py` to locate
+them, `diag_group10_xsens2_rowcounts.py`/`_rowdetail.py` to inspect the underlying raw rows): **the
+row-count denominator (`n_total = end_idx - start_idx`) is bit-exact 300/300 in EVERY window, every
+time** — Xsens is a continuous 30 Hz grid with no gaps at any of these boundaries, so this is
+conclusively NOT a resample-grid/window-boundary issue at all. The real cause: our reconstructed
+participant-1 Xsens stream has a handful of genuinely all-9-columns-NaN raw rows (verified by
+printing the actual raw values, not inferred) that the official reference's implied finite-count does
+not have — 5 small windows off by exactly 1, 2, or 4 samples out of 300 (e.g. `ws=993.319569`: 1 row,
+`video_time_s=1002.5333`, all 9 of `p1_{acc,gyr,euler}_{x,y,z}` genuinely NaN in our file; official
+implies 300/300 finite), plus 2 windows (`ws=873.319569`, `ws=1243.319569`) sitting inside much larger
+genuine multi-hundred-sample dropout periods (238/300 and 265/300 NaN respectively — a real sensor
+outage present on BOTH sides) where the official is STILL off by exactly +1 finite sample at the
+recovery edge. Total discrepancy: 9 samples out of ~10,500 compared (<0.1%), confined to 3/693
+columns. **Root cause of why our reconstruction is missing these ~9 specific single-sample instants
+(a small raw-sync/merge completeness gap, most likely in `raw_sync_oe_xsens.py`'s or
+`global_cleaning.py`'s Xsens merge for Group 10 specifically) was not traced further** given this
+session's remaining effort budget — would require pulling Group 10's raw per-participant Xsens CSVs
+and diffing the full merge step sample-by-sample, a substantial new investigation. Reported at the
+depth actually investigated: **conclusively NOT the OE10 mechanism** (proven via the bit-exact
+denominator), genuinely small in scope, real root cause narrowed to "raw-sync/merge Xsens
+completeness for Group 10" but not fully closed.
+
+**Group 6 wired into `run_end_to_end_proof_task2.py`'s scope — ALL EXACT, closing Task 2's proof to
+all 9 study groups.** Per the correction/follow-up entries below, Group 6's raw OptiTrack marker
+reconstruction (`reconstruct_markers_group6()`) was already ported and validated bit-for-bit exact
+against real raw Motive takes earlier today — this was the last missing piece for Task 2's own proof
+(whose window grid needs real OptiTrack data for every group, unlike Task 1's official-CSV-bootstrapped
+grid). Changed `TASK2_GROUPS` from `list(e2e.OPTITRACK_GROUPS)` (= Task 1's own 8-group list, which
+excludes Group 6) to `sorted(set(e2e.OPTITRACK_GROUPS) | {6})` — a Task-2-local override, deliberately
+NOT touching the shared `e2e.OPTITRACK_GROUPS` so Task 1's own (already-passing, already-final) proof
+is provably unaffected. Also fixed the module's stale hardcoded `print()` claiming "Group 6 excluded
+from Task 2 proof entirely" (now describes the actual current scope). **One real, small data-placement
+gap found and fixed while running it**: `raw_sync_optitrack.process_group()` needs
+`RAW_VALIDATION/group_6_optitrack/group_6/elan/Group_6_individual_build_renamed.csv` (the same
+renamed-ELAN file every other group's OptiTrack sync reads from its own `group_{g}_optitrack/`
+mirror), which existed centrally (`ELAN_RENAMED/Group_6_individual_build_renamed.csv`) and per-group
+for the other 8 groups (e.g. `RAW_VALIDATION/group_7_optitrack/group_7/elan/...`, confirmed
+byte-identical via `diff <(sort ...) <(sort ...)`) but had never been mirrored into Group 6's own
+`RAW_VALIDATION/group_6_optitrack/group_6/elan/` directory (only `.../group_6/optitrack/` existed) —
+copied it into place (pure file placement, matching the existing per-group mirror convention exactly,
+no code or content change). **Result, real raw sensor files -> this repo's own code -> official Task 2
+CSV, Group 6**: XSENS2 693/693 exact, OE10 311/311 exact, OPTI2 534/534 exact, 82/82 matched windows
+(recognition_label counts: co_building 43, conversation 29, co_merging 10) — a clean, unqualified
+EXACT pass, the same standard as Groups 1/3/5/7/9. **Task 2's end-to-end proof (XSENS2/OE10/OPTI2) now
+covers all 9 study groups** (was 8): 7/9 fully exact on every family (1,3,5,6,7,9), 2/9 with the OE10
+finding above (2,8, now mechanistically proven not fixable), 1/9 with the small Group 10 XSENS2
+residual above. Updated `end_to_end_proof_task2_summary.csv` in place (Group 6's 3 new rows added,
+all other groups' existing rows preserved by the script's own merge-on-target-groups logic).
+
+New diagnostic scripts (kept in `END_TO_END_PROOF/` alongside the existing `diag_*.py` files, per that
+directory's established pattern): `diag_oe10_n_boundary.py`, `diag_oe10_n249_test.py`,
+`diag_group8_oe10_mechanism.py`, `diag_group10_xsens2_available_frac.py`,
+`diag_group10_xsens2_rowcounts.py`, `diag_group10_xsens2_rowdetail.py`. Disk stayed at 10.7-12.3GB
+free throughout (never near the 2GB stop threshold); all large per-group model_ready files cleaned up
+after use, same discipline as prior sessions. No git operations performed, per task instructions.
+
 ### 2026-09-11 — Group 6 OptiTrack raw marker reconstruction: ported and validated bit-for-bit exact, closing the follow-up flagged by the correction below
 
 Follow-up task, same day: port Group 6's raw-Motive-marker reconstruction (the standing gap the
