@@ -262,7 +262,7 @@ def run_exact_reproduction(cfg: Config):
     fold_metrics_0806.to_csv(os.path.join(out_dir, "task1_optimized_0806_fold_metrics.csv"), index=False)
     pd.DataFrame({"feature_name": features}).to_csv(os.path.join(out_dir, "task1_optimized_0806_exact_features.csv"), index=False)
 
-    print("\nHistorical target: pooled accuracy ≈ 0.8064, macro-F1 ≈ 0.8062, balanced acc. ≈ 0.8065")
+    print("\nHistorical target: pooled accuracy ~0.8064, macro-F1 ~0.8062, balanced acc. ~0.8065")
     return df, features, summary_0806, fold_metrics_0806, out_dir
 
 

@@ -46,6 +46,61 @@ until reviewed.
 
 (newest first)
 
+### 2026-09-11 — Model-equivalence test: reconstructed features are numerically correct (float64-precision-exact), but a real downstream fragility + a separate, bigger, unexplained gap both surfaced
+
+Direct answer to "if our reconstructed features feed the actual model code, do we get the same
+result as the official file": **not bit-identical, but for a well-understood, benign reason — not
+a flaw in the reconstruction.**
+
+**Method**: wrote `data/external/thesis_data/END_TO_END_PROOF/compare_official_vs_reconstructed.py`,
+which assembles all 9 groups' reconstructed Task 1 features into one full-shape replacement CSV
+(`reconstructed_binary_5s_specialized_oe_merged_all_features.csv`, built by a prior agent's
+`build_full_reconstructed_csv.py`), then runs `src/models/task1.py`'s `run_exact_reproduction()`
+(the thesis's headline Task 1 Transformer config: OPTI2_RELATIVE_ONLY, seq_len=18, k=120, seed=42)
+against both the real official file and the reconstructed one, via a minimal temp data-root (only
+the one file `_exact_repro_shared()` actually reads).
+
+**Determinism check first** (important control): ran the OFFICIAL file through `run_exact_reproduction()`
+twice, independently. Results were **bit-for-bit identical to every printed digit**
+(pooled_accuracy=0.7338454586534117, both runs) — this specific training code+seed is fully
+deterministic on this machine. This matters: it means any difference between official and
+reconstructed runs must come from an actual data difference, not training randomness — ruling out
+the natural first assumption.
+
+**Root cause, found precisely**: direct full-float64-precision diff (not the 1e-6 tolerance used
+elsewhere) of the two feature files, row-order and column-order both confirmed identical, found
+**888 of 1515 columns differ by a uniform, tiny ~4.657e-10** — floating-point noise at the limit of
+float64 precision (~10 significant digits), concentrated in `__energy`-suffixed columns
+(sum-of-squares aggregates, where summation order can shift a result's last few bits depending on
+the exact code path/library internals — not a bug, an inherent property of floating-point
+arithmetic). **The reconstruction is numerically correct to the limit of float64 precision.**
+
+**Why this still changed the model's result**: `SelectKBest(k=120)` applies a hard, discrete cutoff
+on a continuous F-score. With 211 candidate features and only 120 selected, some features near the
+cutoff are nearly tied — and this ~1e-10-level noise was enough to occasionally flip which exact
+feature lands on which side of that boundary. A different discrete feature subset feeding an
+otherwise-identical (and itself fully deterministic) Transformer training run produces a genuinely
+different, but equally legitimate, result: **official-data run: pooled accuracy/macro-F1/balanced
+0.7338/0.7335/0.7338. Reconstructed-data run: 0.7494/0.7485/0.7493** (diff ~0.015-0.016 across all
+three metrics). This is a real, previously-undocumented methodological fragility of the k=120
+feature-selection step specifically — worth knowing about, not a code defect anywhere in the
+pipeline.
+
+**Separate, bigger, still-unexplained finding**: neither run is anywhere near the module's own
+documented historical target (`docstring`: "pooled accuracy ≈ 0.8064, macro-F1 ≈ 0.8062, balanced
+acc. ≈ 0.8065") — official-data run is ~7 percentage points below it, reconstructed-data run ~5-6
+points below. This is independent of the reconstruction question entirely (the official-data run
+uses the pristine, untouched, real official file) — it's an open question whether this exact
+headline Transformer config has ever actually been re-verified against the current environment's
+library versions (torch/sklearn), or whether the ~0.8064 figure predates some drift. **Flagged here
+as a real, unresolved gap for a future session — not chased further this pass, out of scope for the
+reconstruction-equivalence question that was actually being tested.**
+
+**Minor fix along the way**: `src/models/task1.py` line 265 had a non-ASCII `≈` character in a
+`print()` that crashes with `UnicodeEncodeError` on some Windows console codepages (hit directly,
+cp1254/Turkish locale) — replaced with `~` for portability. Purely cosmetic, unrelated to the
+findings above.
+
 ### 2026-09-11 — End-to-end proof finalized: both fixes wired into `run_end_to_end_proof.py` itself, scaled to all 9 groups, one NEW bug found+fixed along the way (Groups 8/9/10 raw ELAN not anonymized) — ALL EXACT, every group × family
 
 Continuation/completion of the same-day entry below (the one that found and fixed the Group 1 Xsens
