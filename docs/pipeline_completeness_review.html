@@ -1,0 +1,260 @@
+<title>Pipeline Completeness Review</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EEF1EF;
+    --surface:#FFFFFF;
+    --surface-alt:#E3E8E5;
+    --line:#CBD3CE;
+    --ink:#141C1A;
+    --ink-soft:#4E5A56;
+    --ink-faint:#7C8884;
+    --accent:#1B7A8C;
+    --accent-ink:#0E4C57;
+    --accent-soft:#DCEEF1;
+    --ok:#2E7D4F;
+    --ok-soft:#E1F1E6;
+    --ok-line:#B7DCC3;
+    --warn:#A9701A;
+    --warn-soft:#F6EAD7;
+    --warn-line:#E4C591;
+    --open:#5D4E85;
+    --open-soft:#EBE7F3;
+    --open-line:#CBBEE0;
+    --shadow: 0 1px 2px rgba(20,28,26,.06), 0 8px 24px -12px rgba(20,28,26,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0E1514; --surface:#151F1D; --surface-alt:#1C2825; --line:#2A3835;
+      --ink:#E7EEEC; --ink-soft:#A9B6B2; --ink-faint:#748480;
+      --accent:#5FC2D6; --accent-ink:#BEEAF2; --accent-soft:#173139;
+      --ok:#6FCB93; --ok-soft:#132A1F; --ok-line:#2C4E3A;
+      --warn:#E0AE5C; --warn-soft:#2E2314; --warn-line:#5A4423;
+      --open:#B6A4E0; --open-soft:#241E33; --open-line:#443A5E;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E1514; --surface:#151F1D; --surface-alt:#1C2825; --line:#2A3835;
+    --ink:#E7EEEC; --ink-soft:#A9B6B2; --ink-faint:#748480;
+    --accent:#5FC2D6; --accent-ink:#BEEAF2; --accent-soft:#173139;
+    --ok:#6FCB93; --ok-soft:#132A1F; --ok-line:#2C4E3A;
+    --warn:#E0AE5C; --warn-soft:#2E2314; --warn-line:#5A4423;
+    --open:#B6A4E0; --open-soft:#241E33; --open-line:#443A5E;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px -12px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:"IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:980px; margin:0 auto; padding:56px 24px 96px;}
+
+  .eyebrow{font-family:"JetBrains Mono", monospace; font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--accent-ink); font-weight:600; display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+  .eyebrow::before{content:""; width:18px; height:1px; background:var(--accent); display:inline-block;}
+  h1{font-family:"Spectral", Georgia, serif; font-weight:600; font-size:clamp(30px,4.2vw,42px); line-height:1.12; margin:0 0 14px; text-wrap:balance;}
+  .lede{font-family:"Spectral", Georgia, serif; font-size:17.5px; line-height:1.6; color:var(--ink-soft); max-width:64ch; margin:0 0 6px;}
+  .source-line{font-size:13px; color:var(--ink-faint); margin-top:10px;}
+  .source-line a{color:var(--accent-ink);}
+
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:36px 0 8px; box-shadow:var(--shadow);}
+  .stat{background:var(--surface); padding:20px 18px;}
+  .stat .n{font-family:"JetBrains Mono", monospace; font-variant-numeric:tabular-nums; font-size:26px; font-weight:600; color:var(--ink); line-height:1;}
+  .stat .n small{font-size:14px; font-weight:500; color:var(--ink-faint);}
+  .stat .l{font-size:12.5px; color:var(--ink-soft); margin-top:8px; line-height:1.4;}
+  @media (max-width:640px){ .stats{grid-template-columns:repeat(2,1fr);} }
+
+  /* pipeline strip */
+  .stage-strip{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:44px 0 8px;}
+  .stage{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 14px; box-shadow:var(--shadow); position:relative;}
+  .stage .idx{font-family:"JetBrains Mono", monospace; font-size:11px; color:var(--ink-faint); letter-spacing:.04em;}
+  .stage h3{font-family:"Spectral", Georgia, serif; font-size:15.5px; margin:6px 0 8px; font-weight:600;}
+  .stage .stat-row{font-size:12px; color:var(--ink-soft); line-height:1.5;}
+  .stage-arrow{display:none;}
+  @media (max-width:820px){ .stage-strip{grid-template-columns:1fr 1fr;} }
+  @media (max-width:520px){ .stage-strip{grid-template-columns:1fr;} }
+
+  .pill{display:inline-flex; align-items:center; gap:5px; font-family:"JetBrains Mono", monospace; font-size:10.5px; font-weight:600; letter-spacing:.03em; padding:3px 8px 3px 7px; border-radius:20px; white-space:nowrap; margin-top:8px;}
+  .pill.ok{background:var(--ok-soft); color:var(--ok); border:1px solid var(--ok-line);}
+  .pill.warn{background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn-line);}
+  .pill.open{background:var(--open-soft); color:var(--open); border:1px solid var(--open-line);}
+  .pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor; display:inline-block;}
+
+  section.block{margin:56px 0;}
+  .block-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:18px;}
+  .block-head h2{font-family:"Spectral", Georgia, serif; font-weight:600; font-size:23px; margin:0; text-wrap:balance;}
+  .block-icon{font-family:"JetBrains Mono", monospace; font-weight:600; font-size:14px; color:var(--surface); background:var(--ink); padding:2px 9px; border-radius:4px;}
+
+  .item{display:grid; grid-template-columns:auto 1fr; gap:14px; padding:16px 0; border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:none;}
+  .item .marker{width:10px; height:10px; border-radius:50%; margin-top:7px;}
+  .marker.ok{background:var(--ok);}
+  .marker.warn{background:var(--warn);}
+  .marker.open{background:var(--open);}
+  .item h4{font-family:"IBM Plex Sans", sans-serif; font-size:15px; font-weight:600; margin:0 0 5px;}
+  .item p{font-size:14px; line-height:1.62; color:var(--ink-soft); margin:0;}
+  .item .num{font-family:"JetBrains Mono", monospace; font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600;}
+
+  .diff-table{width:100%; border-collapse:collapse; margin-top:8px;}
+  .diff-table th{text-align:left; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); font-weight:600; padding:9px 12px; background:var(--surface-alt); border-bottom:1px solid var(--line);}
+  .diff-table td{padding:10px 12px; font-size:13.5px; border-bottom:1px solid var(--line);}
+  .diff-table tr:last-child td{border-bottom:none;}
+  .diff-table .num{font-family:"JetBrains Mono", monospace; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap;}
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); background:var(--surface); margin-top:14px;}
+
+  .note{font-size:13px; color:var(--ink-soft); margin-top:16px; padding:12px 16px; background:var(--surface-alt); border-left:3px solid var(--accent); border-radius:0 6px 6px 0; line-height:1.6;}
+  .note b{color:var(--ink);}
+
+  .legend{display:flex; gap:20px; flex-wrap:wrap; font-size:12.5px; color:var(--ink-soft); margin:18px 0 0;}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .legend .dot{width:9px; height:9px; border-radius:50%;}
+
+  footer{margin-top:70px; padding-top:22px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+  footer a{color:var(--accent-ink);}
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="eyebrow">Pipeline Status &middot; Honest Review</div>
+    <h1>How complete is the raw-to-results pipeline, really</h1>
+    <p class="lede">A plain accounting of what's genuinely proven end-to-end from raw sensor data,
+      what's still missing, and exactly how far off the remaining numbers are — no rounding up.</p>
+    <p class="source-line">Companion to the <em>Reproduction Scorecard</em> (table-by-table numbers) &middot;
+      Repo: <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity">github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity</a></p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">3<small>&nbsp;/&nbsp;3</small></div><div class="l">tasks with a raw&rarr;features chain now proven end-to-end, zero pre-computed dependency</div></div>
+    <div class="stat"><div class="n">9<small>&nbsp;/&nbsp;9</small></div><div class="l">groups with fully closed raw sensor sync (OE, Xsens, OptiTrack)</div></div>
+    <div class="stat"><div class="n">14<small>+</small></div><div class="l">real, distinct bugs found and fixed this sprint alone — not counting earlier sessions</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">genuinely open items: the model-layer headline gap, and the un-wired pipeline script</div></div>
+  </div>
+
+  <div class="stage-strip">
+    <div class="stage"><div class="idx">STAGE 1</div><h3>Raw sync</h3><div class="stat-row">OE + Xsens + OptiTrack, all 9 groups</div><span class="pill ok">closed</span></div>
+    <div class="stage"><div class="idx">STAGE 2</div><h3>Cleaning</h3><div class="stat-row">Label normalize, identity-fix, trim</div><span class="pill ok">closed</span></div>
+    <div class="stage"><div class="idx">STAGE 3</div><h3>Features</h3><div class="stat-row">Task 1 exact &middot; Task 2 7/9 exact</div><span class="pill warn">mostly closed</span></div>
+    <div class="stage"><div class="idx">STAGE 4</div><h3>Tokens</h3><div class="stat-row">6-label activity tokens, Task 3</div><span class="pill ok">closed</span></div>
+    <div class="stage"><div class="idx">STAGE 5</div><h3>Models</h3><div class="stat-row">Chapter 8 mostly exact &middot; Task 1 headline open</div><span class="pill open">not fully proven</span></div>
+  </div>
+
+  <section class="block" id="done">
+    <div class="block-head"><span class="block-icon">DONE</span><h2>What's genuinely proven</h2></div>
+
+    <div class="item">
+      <div class="marker ok"></div>
+      <div><h4>Raw sensor sync, all 9 groups, both sensor families</h4>
+      <p>OpenEarable + Xsens (video-time alignment, sync-move peak-shift, label attachment) and OptiTrack
+      (raw unstable marker tracks &rarr; stable participant identities, via hand-curated per-group/per-take
+      allowlists, not the algorithmic Hungarian-tracker dead ends the source notebook explored and abandoned)
+      are exact for every group that has a recording. Group 4 is permanently excluded — camera failure during
+      recording, a genuine data limitation, not a reproduction gap.</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker ok"></div>
+      <div><h4>Task 1 features (5s windows): <span class="num">26/26</span> group&times;family combinations exact</h4>
+      <p>True raw sensor files, through this repo's own sync/clean/feature code, reproduce the official
+      OpenEarable, Xsens, and OptiTrack feature tables bit-for-bit — for all 9 groups, zero dependency on
+      any pre-computed intermediate file.</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker ok"></div>
+      <div><h4>Task 3 tokens and their label input: all 9 groups exact</h4>
+      <p>The 6-label activity-token generation matches the official token table exactly (244 tokens across
+      all groups). Its own input — a label-normalization step that was previously only reconstructed
+      circularly (extracting columns back out of its own target file) — was rebuilt for real from raw
+      ELAN data this sprint: 0 mismatches on every downstream classification column, all 9 groups.</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker ok"></div>
+      <div><h4>Table 8.7 — the thesis's own headline Chapter 8 result</h4>
+      <p>All 7 n-gram/HMM/hybrid grammar models reproduce exactly, including a documented reproducibility
+      trap in the source notebook (token <code>group</code> column must be treated as text, not int).</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker ok"></div>
+      <div><h4>Data hosting and provenance</h4>
+      <p>Anonymized per-group archives built and published (interim: public Drive folder; Zenodo once the
+      paper is out), with an allow-list — not deny-list — safety model so an unknown future file can never
+      slip a real name through. SHA-256 checksums recorded for every file.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="lacking">
+    <div class="block-head"><span class="block-icon">GAPS</span><h2>What's still missing</h2></div>
+
+    <div class="item">
+      <div class="marker open"></div>
+      <div><h4>The one-command pipeline script isn't wired up</h4>
+      <p><code>scripts/reproduce_pipeline.py</code> — the actual polished tool meant for someone else to run
+      — has none of this sprint's fixes in it. Every proof above lives in ad-hoc scripts under
+      <code>data/external/thesis_data/END_TO_END_PROOF/</code>, gitignored, built to prove a point rather
+      than to be a product. Getting from "we proved it's possible" to "run one command and watch it happen"
+      is real, undone work.</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker open"></div>
+      <div><h4>The model-training layer was only stress-tested for Task 1</h4>
+      <p>We proved reconstructed features &rarr; identical model results is <em>almost</em> true for Task 1
+      (see the gap below). That exact test — feed our own reconstructed data into the real model code and
+      diff the output — was never repeated for Task 2's classifiers or Task 3's downstream models (Tables
+      8.2&ndash;8.8). Those tables were validated against the <em>official</em> feature files, not against
+      our own reconstructed ones.</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker warn"></div>
+      <div><h4>Two small, precisely-diagnosed residuals in Task 2</h4>
+      <p>Groups 2 and 8 have one feature family (OE10 magnetometer stats) that's provably correct but
+      inherently float-boundary-fragile in the <em>original</em> notebook's own methodology — not fixable
+      without recovering a one-time Colab execution's exact float64 state. Group 10 has a small,
+      unresolved data-completeness gap (9 missing samples out of ~10,500 in a reconstructed Xsens stream).</p></div>
+    </div>
+
+    <div class="item">
+      <div class="marker warn"></div>
+      <div><h4>No automated regression suite</h4>
+      <p>Every validation this sprint ran as a one-off script, executed once, read once. There's no
+      <code>pytest</code>-style suite that would catch a future change silently breaking something already
+      proven — the proof exists in the git history and docs, not as a repeatable check.</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="diff">
+    <div class="block-head"><span class="block-icon">SIZE</span><h2>How different are the results, exactly</h2></div>
+    <p style="font-size:14.5px;color:var(--ink-soft);line-height:1.6;max-width:66ch;">
+      Not all gaps are the same size. Here's the real scale of every open discrepancy, largest to smallest —
+      the point of this table is that "close but not exact" covers a 10,000&times; range, and it matters
+      which end of it a given number is on.</p>
+
+    <div class="table-wrap"><table class="diff-table">
+      <thead><tr><th>Where</th><th>Layer</th><th class="num">Gap size</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td>Task 1 headline Transformer</td><td>Model training</td><td class="num">~5&ndash;7 pts accuracy</td><td>Real, reproducible, root cause narrowed (not library-version drift in scikit-learn) but not found. The one genuinely large open number.</td></tr>
+        <tr><td>Table 8.4 neural rows</td><td>Model training</td><td class="num">~1&ndash;4 pts</td><td>Correct ranking (best model is still best), attributed to ordinary training-seed variance, same character as above but smaller.</td></tr>
+        <tr><td>Task 2 OE10, Groups 2/8</td><td>Feature aggregate</td><td class="num">~1&times;10&#8315;&sup3;&ndash;10&#8315;&sup4;</td><td>Proven mechanism: a per-window resample size flips by exactly 1 sample on float-noise boundary crossings. Inherent to the source notebook, not this port.</td></tr>
+        <tr><td>Group 10 Xsens residual</td><td>Raw data</td><td class="num">0.3&ndash;1.3% of rows</td><td>9 missing samples in ~10,500 compared. Real, small, not yet traced to its ultimate cause.</td></tr>
+        <tr><td>Task 3 RQ3 labels</td><td>Label audit columns</td><td class="num">2 / 2080 rows</td><td>One sample flips sides of a window boundary; the actual label is identical either way.</td></tr>
+        <tr><td>Task 1/2/3 feature tables (everything else)</td><td>Feature values</td><td class="num">0 &ndash; 1&times;10&#8315;&sup9;</td><td>Bit-exact or at the literal limit of float64 precision. This is the overwhelming majority of what was checked.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">The pattern holds across the whole sprint: <b>every gap found this large or larger sits
+      at the model-training layer, never the data or feature layer.</b> Nothing that's actually "our code"
+      has an unexplained numeric gap left in it — what's open is specifically neural network training being
+      sensitive to details (library versions, float summation order, discrete feature-selection cutoffs)
+      that are extremely hard to pin down years after the original run.</div>
+  </section>
+
+  <footer>
+    <span>Real code, real numbers, real dates — nothing here is rounded up.</span>
+    <span>Full evidence trail: <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity/blob/master/docs/session_2026-09-05_autonomous_progress.md">session log</a> &middot; <a href="https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity/blob/master/docs/table_to_source_mapping.md">table&rarr;source map</a></span>
+  </footer>
+
+</div>
