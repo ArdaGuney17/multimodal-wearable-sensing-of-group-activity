@@ -2387,3 +2387,52 @@ scheduled run needs a tool permission not already granted, it pauses rather than
 1. `global_cleaning.py` real-data validation, Group 1 (OE+Xsens only, OptiTrack out of scope).
 2. Scale Task 1 feature engineering (OE/XSENS2/OPTI2) to Group 2.
 3. Raw sync audit + validation for Group 2 (expected simplest case — no shift cell in source notebook — testing whether the generic pipeline Just Works or has its own hidden per-group quirk like Group 7 did).
+
+## 2026-09-16: `scripts/reproduce_pipeline.py` sync stage wired to real OptiTrack marker reconstruction
+
+Closed a gap flagged since the OptiTrack marker-reconstruction work: the orchestrator's own
+`sync` stage was calling `raw_sync_optitrack.run_all()`, but that module's `run_all()`/
+`process_group()` still only knew how to read a pre-existing `*_cleaned_combined_240hz.csv` —
+none of the `reconstruct_markers_group{1,2,3,5,6,7,8,9,10}()` functions ported earlier this
+sprint were ever actually called from anywhere except one-off validation scripts. So a real
+`--data-root data/raw` run of the orchestrator was silently falling through to the
+`RAW_VALIDATION` bridge fixtures for every group's OptiTrack, even though this repo's own code
+could reconstruct it from scratch.
+
+**Fix**: added `build_reconstructed_optitrack_df(data_root, group)` to
+`src/preprocessing/raw_sync_optitrack.py` — discovers a group's raw Motive take files under
+`{data_root}/group_{g}/optitrack/` (sorted by trailing take number; filenames are inconsistent
+across groups — `Group-1` vs `Group_2`, hyphen vs underscore — so matching is regex-based, not a
+fixed template), slices to however many takes that group's own `GROUP{N}_CHAINS` dict declares
+(handles Group 6's real 3-file/2-used split automatically, no hardcoding), and dispatches to the
+right `reconstruct_markers_group{N}()`. `run_all()` now tries this first per group and only falls
+back to the old pre-existing-combined-CSV path on `FileNotFoundError`/`ValueError` — so it still
+works against the older fixture-style layout too.
+
+**Verified**, not just wired:
+- Ran the actual orchestrator (`scripts/reproduce_pipeline.py --stages sync`) against
+  `--data-root data/raw` for all 9 groups. All 9 groups' OptiTrack now report `done` via
+  `raw_reconstruction` (fresh from raw Motive exports), not `bridged` from fixtures.
+- Groups 1, 6, 7, 10: freshly-reconstructed combined/labeled output compared column-by-column
+  against the validated `RAW_VALIDATION` fixtures — shapes and per-take row counts identical;
+  every numeric column's max diff is float-noise level (1e-13 to 1e-16, same class of benign
+  non-associativity noise documented elsewhere in this log); the only non-numeric mismatch is
+  `optitrack_quality_note` rendering as `""` vs `NaN` for "no note" rows — a serialization choice,
+  not a content difference (matches the already-known Group 6 finding from this sprint).
+- Group 9: found a real 305-row mismatch (880,464 vs 880,159) between our labeled output and
+  `RAW_VALIDATION/group_9_optitrack/.../group_9_optitrack_labeled.csv` — investigated rather than
+  waved off. Traced it to the fixtures themselves: our *combined* (pre-label) reconstruction is
+  bit-exact against `group_9_optitrack_cleaned_combined_240hz.csv` (880,464 rows, identical
+  per-take breakdown), and `apply_sync`/`fast_assign_labels` never drop rows (row count in == row
+  count out) — so the mismatch is between the repo's own two Group 9 fixtures, not something this
+  change introduced. Most likely explanation: `group_9_optitrack_labeled.csv` predates the "CELL 42
+  UPDATED" `GROUP9_CHAINS` revision (documented in the module's own comments — adds
+  `Unlabeled 2908`/`Unlabeled 2532` candidates) and was never regenerated. Not chased further; flagged
+  here rather than assumed-fine.
+- Cleaned up all scratch test output after each check (disk stayed tight, ~7-10GB free throughout).
+
+**Still open / not touched by this fix**: the Task-1/ENG3 5s-window-grid circularity gap (needs a
+pre-existing official grid CSV, bridged not computed — unrelated to OptiTrack) and the OE/Xsens
+sync stage's own pre-existing gaps for groups 1/3/6 (missing anonymized `elan/Group_N.csv` in this
+sandbox's `data/raw`, falling back to bridge fixtures as already documented) are unchanged by
+this session — those aren't OptiTrack issues and weren't in scope here.

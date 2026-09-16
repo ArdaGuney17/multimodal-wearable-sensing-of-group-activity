@@ -42,12 +42,19 @@ docs/table_to_source_mapping.md for the full history):
     via the same pre-existing real fixture the ported code's own
     docstrings point at (INTERACTION_BINARY_5S_SPECIALIZED_OE/...), not a
     fresh computation -- reported as "bridged", not "done".
-  - OptiTrack's raw marker-identity reconstruction (Hungarian-algorithm
-    tracklet stitching) was never ported (explicitly out of scope) --
-    raw_sync_optitrack.py starts from an already-reconstructed
-    "*_cleaned_combined_240hz.csv" file, which this sandbox's data/raw
-    does not have; bridged from the validated RAW_VALIDATION fixtures
-    where available.
+  - RESOLVED (2026-09-16): OptiTrack's raw marker reconstruction (manual
+    tracklet stitching, not Hungarian-algorithm -- that approach was an
+    abandoned dead end explored in the notebook) is now ported for all 9
+    groups that have an OptiTrack recording, and wired into
+    raw_sync_optitrack.run_all() itself: it now builds each group's
+    combined marker DataFrame straight from data_root's raw Motive take
+    exports via reconstruct_markers_group{1,2,3,5,6,7,8,9,10}(), falling
+    back to a pre-existing "*_cleaned_combined_240hz.csv" only if the raw
+    takes aren't present at --data-root (e.g. an older fixture-style
+    layout). Verified against the validated RAW_VALIDATION fixtures for
+    Group 1 and Group 6 (float-noise-level differences only, ~1e-13..
+    1e-16). The "bridged" status below now only fires for a --data-root
+    that is missing the raw take files outright.
   - src/models/task3_expanding_prefix.py needs
     INTERACTION_ENG3/recognition_interaction_window_label_inventory.csv,
     which nothing in this pipeline (or this script) currently produces --
@@ -196,16 +203,20 @@ def stage_sync(groups, data_root, out_dir, status: StatusTracker, verbose_errors
         res = (opti_results or {}).get(g, {})
         written = isinstance(res, dict) and res.get("labeled_path") and os.path.exists(res["labeled_path"])
         if written:
-            status.add("sync", g, "optitrack", "done", "raw_sync_optitrack.process_group() on --data-root")
+            src_detail = res.get("source", "unknown")
+            detail = ("raw_sync_optitrack.run_all() reconstructed from raw Motive take exports on --data-root"
+                      if src_detail == "raw_reconstruction" else
+                      "raw_sync_optitrack.process_group() read a pre-existing *_cleaned_combined_240hz.csv on --data-root")
+            status.add("sync", g, "optitrack", "done", detail)
             continue
         reason = res.get("error") if isinstance(res, dict) else None
         fname = f"group_{g}_optitrack_labeled.csv"
         src = os.path.join(RAW_VALIDATION, f"group_{g}_optitrack", f"group_{g}", "optitrack", "optitrack_labeled", fname)
         dst = os.path.join(sync_root, f"group_{g}", "optitrack", "optitrack_labeled", fname)
         if bridge_copy(src, dst):
-            status.add("sync", g, "optitrack", "bridged", f"--data-root lacked input ({reason or 'no result'}); used validated RAW_VALIDATION optitrack fixture")
+            status.add("sync", g, "optitrack", "bridged", f"--data-root lacked raw takes and pre-existing combined CSV ({reason or 'no result'}); used validated RAW_VALIDATION optitrack fixture")
         else:
-            status.add("sync", g, "optitrack", "skipped", reason or "no raw optitrack input available (marker reconstruction out of scope, see module docstring)")
+            status.add("sync", g, "optitrack", "skipped", reason or "no raw optitrack takes or pre-existing combined CSV available on --data-root or in bridge fixtures")
 
     return sync_root
 

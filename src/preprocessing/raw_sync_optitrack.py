@@ -1270,14 +1270,93 @@ def process_group(data_root: str, group: int, out_dir: str | None = None,
     return {"labeled_path": labeled_path, "summary_path": summary_path, "alignment": meta}
 
 
+# Group -> (reconstruction function, number of raw takes it consumes).
+# The count comes from each group's own *_CHAINS dict (its ground-truth
+# key set, ported verbatim from the notebook) -- NOT from how many raw
+# Motive export files happen to sit on disk. Group 6 is the one place
+# these differ: 3 raw take files exist, but GROUP6_CHAINS only has 2
+# keys (take_3 is a confirmed exact-duplicate-prefix of take_2, excluded
+# by the notebook itself -- see GROUP6_CHAINS's own comment above).
+_RECONSTRUCT_REGISTRY: dict[int, tuple[str, int]] = {
+    1: ("reconstruct_markers_group1", 2),
+    2: ("reconstruct_markers_group2", len(GROUP2_CHAINS)),
+    3: ("reconstruct_markers_group3", len(GROUP3_CHAINS)),
+    5: ("reconstruct_markers_group5", len(GROUP5_CHAINS)),
+    6: ("reconstruct_markers_group6", len(GROUP6_CHAINS)),
+    7: ("reconstruct_markers_group7", len(GROUP7_CHAINS)),
+    8: ("reconstruct_markers_group8", len(GROUP8_CHAINS)),
+    9: ("reconstruct_markers_group9", len(GROUP9_CHAINS)),
+    10: ("reconstruct_markers_group10", len(GROUP10_CHAINS)),
+}
+
+
+def _sorted_raw_take_paths(data_root: str, group: int) -> list[str]:
+    """Raw Motive take exports for one group, sorted by their trailing
+    Take number (filenames are inconsistent across groups -- 'Group-1',
+    'Group_2', hyphen vs underscore -- so this matches on the number,
+    not a fixed template)."""
+    import glob as _glob
+    import re as _re
+
+    raw_dir = os.path.join(data_root, f"group_{group}", "optitrack")
+    candidates = _glob.glob(os.path.join(raw_dir, "*Take*.csv"))
+
+    def take_num(path: str) -> int:
+        m = _re.search(r"Take[_-](\d+)", os.path.basename(path))
+        return int(m.group(1)) if m else -1
+
+    return sorted((p for p in candidates if take_num(p) > 0), key=take_num)
+
+
+def build_reconstructed_optitrack_df(data_root: str, group: int) -> pd.DataFrame:
+    """Builds this group's combined OptiTrack DataFrame straight from its
+    raw Motive take exports under `{data_root}/group_{g}/optitrack/`, via
+    that group's own `reconstruct_markers_group{N}()`. Raises (does not
+    swallow) if the expected number of raw take files isn't found, so
+    callers can fall back to a pre-existing `*_cleaned_combined_240hz.csv`
+    instead of silently reconstructing from the wrong file count."""
+    if group not in _RECONSTRUCT_REGISTRY:
+        raise ValueError(f"no marker-reconstruction registered for group {group}")
+    fn_name, n_takes = _RECONSTRUCT_REGISTRY[group]
+    paths = _sorted_raw_take_paths(data_root, group)
+    if len(paths) < n_takes:
+        raise FileNotFoundError(
+            f"group {group}: expected >= {n_takes} raw OptiTrack take files under "
+            f"{os.path.join(data_root, f'group_{group}', 'optitrack')}, found {len(paths)}"
+        )
+    paths = paths[:n_takes]
+    fn = globals()[fn_name]
+
+    if group == 1:
+        return fn(paths[0], paths[1])
+
+    take_paths = {f"take_{i + 1}": p for i, p in enumerate(paths)}
+    return fn(take_paths)
+
+
 def run_all(data_root: str, out_dir: str | None = None) -> dict:
     """Runs process_group() for every group in GROUPS. Groups that fail
     (e.g. missing input files) record an "error" key instead of raising,
-    so one bad group doesn't abort the rest."""
+    so one bad group doesn't abort the rest.
+
+    For each group, first tries to build the combined OptiTrack DataFrame
+    from raw Motive take exports via `build_reconstructed_optitrack_df()`
+    (the full raw-to-labeled chain, zero pre-computed dependency). If that
+    raises (raw takes not present at `data_root`, e.g. a sandbox that only
+    ships the pre-built `*_cleaned_combined_240hz.csv`), falls back to
+    `process_group()`'s own default of reading that pre-existing file --
+    this keeps `run_all()` working against both a full raw data_root and
+    the older fixture-style layout, without silently faking either."""
     results = {}
     for group in GROUPS:
         try:
-            results[group] = process_group(data_root, group, out_dir=out_dir)
+            try:
+                optitrack_df = build_reconstructed_optitrack_df(data_root, group)
+                results[group] = process_group(data_root, group, out_dir=out_dir, optitrack_df=optitrack_df)
+                results[group]["source"] = "raw_reconstruction"
+            except (FileNotFoundError, ValueError):
+                results[group] = process_group(data_root, group, out_dir=out_dir)
+                results[group]["source"] = "pre_existing_combined_csv"
         except Exception as e:
             results[group] = {"error": str(e)}
     return results
