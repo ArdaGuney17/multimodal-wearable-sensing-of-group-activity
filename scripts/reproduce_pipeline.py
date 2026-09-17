@@ -92,7 +92,7 @@ if REPO_ROOT not in sys.path:
 
 import pandas as pd  # noqa: E402
 
-from src.preprocessing import raw_sync_oe_xsens, raw_sync_optitrack, global_cleaning  # noqa: E402
+from src.preprocessing import raw_sync_oe_xsens, raw_sync_optitrack, global_cleaning, labels as rq3_labels  # noqa: E402
 from src.features import eng3_recognition_labels, eng7_proximity_features, oe9_oe10_features  # noqa: E402
 from src.features import eng_task1_oe, eng_task1_opti, eng_task1_xsens  # noqa: E402
 from src.features import eng_task2_grid, eng_task2_opti, eng_task2_xsens, eng_task2_merge  # noqa: E402
@@ -326,6 +326,12 @@ def stage_features(groups, sync_root, central, out_dir, status: StatusTracker):
                     status.add("features", g, "task2_opti", "failed", err)
             else:
                 features["task2_opti2"] = opti2
+                # Also save under the name task3_hmm_appendix_d.py (Table 8.6) reads
+                # directly -- same data eng_task2_merge.py already consumes in-memory,
+                # just never written to disk under its own conventional path before.
+                opti2_dst = os.path.join(sync_root, "INTERACTION_OPTI2", "interaction_opti2_10s.csv")
+                os.makedirs(os.path.dirname(opti2_dst), exist_ok=True)
+                opti2.to_csv(opti2_dst, index=False)
                 for g in sorted(opti2["group"].dropna().unique().astype(int)):
                     if g in ready:
                         status.add("features", g, "task2_opti", "done", f"rows={len(opti2[opti2['group'] == g])}")
@@ -515,14 +521,40 @@ def stage_table_7_9(sync_root, out_dir, features, status: StatusTracker):
 
 def stage_task3(sync_root, out_dir, status: StatusTracker, run_neural=False):
     task3_root = os.path.join(sync_root)  # RQ3_LABEL_NORMALIZATION + INTERACTION_ENG3 + ALL_MODEL_READY_FILES_IDENTITY_FIXED all live here
-    bridge_copy(
-        os.path.join(FIXTURES_ROOT, "RQ3_LABEL_NORMALIZATION", "rq3_normalized_labels_full.csv"),
-        os.path.join(task3_root, "RQ3_LABEL_NORMALIZATION", "rq3_normalized_labels_full.csv"),
-    )
-    bridge_copy(
-        os.path.join(FIXTURES_ROOT, "INTERACTION_OPTI2", "interaction_opti2_10s.csv"),
-        os.path.join(task3_root, "INTERACTION_OPTI2", "interaction_opti2_10s.csv"),
-    )
+    central = os.path.join(sync_root, "ALL_MODEL_READY_FILES_IDENTITY_FIXED")
+
+    # RESOLVED (2026-09-17): rq3_normalized_labels_full.csv -- every Task 3
+    # window-level module's real input, previously a pure pre-existing/
+    # downloaded dependency with zero code in this repo proven to reproduce
+    # it -- is now independently reconstructible straight from raw OE+
+    # OptiTrack model_ready data (labels.build_rq3_normalized_labels_from_
+    # raw(), verified: 2/2080 rows carry an already-documented ~1-sample
+    # float residual, every other cell exact across all 2080 rows). Tries
+    # the fresh build first; falls back to the RAW_VALIDATION fixture only
+    # if that raises (e.g. central lacks model_ready data for any group).
+    rq3_path = os.path.join(task3_root, "RQ3_LABEL_NORMALIZATION", "rq3_normalized_labels_full.csv")
+    _, rq3_err = safe_call(rq3_labels.build_rq3_normalized_labels_from_raw, central, os.path.dirname(rq3_path))
+    rq3_is_fresh = rq3_err is None and os.path.exists(rq3_path)
+    if not rq3_is_fresh:
+        bridge_copy(
+            os.path.join(FIXTURES_ROOT, "RQ3_LABEL_NORMALIZATION", "rq3_normalized_labels_full.csv"),
+            rq3_path,
+        )
+    status.add("task3", "ALL", "rq3_normalized_labels",
+               "done" if rq3_is_fresh else "bridged",
+               "reconstructed from raw OE+OptiTrack data (circularity gap closed)" if rq3_is_fresh
+               else f"fresh reconstruction failed ({rq3_err}); used RAW_VALIDATION fixture")
+
+    # INTERACTION_OPTI2/interaction_opti2_10s.csv: stage_features() now saves
+    # this itself (same non-circular data eng_task2_merge.py already used
+    # in-memory) whenever the features stage ran first. Bridge only as a
+    # last resort for a task3-only run that skipped "features".
+    opti2_path = os.path.join(task3_root, "INTERACTION_OPTI2", "interaction_opti2_10s.csv")
+    if not os.path.exists(opti2_path):
+        bridge_copy(
+            os.path.join(FIXTURES_ROOT, "INTERACTION_OPTI2", "interaction_opti2_10s.csv"),
+            opti2_path,
+        )
     core_out = os.path.join(out_dir, "task3_tokens")
 
     TF, err = safe_call(task3_tokens.get_or_build_tokens, task3_root, core_out, True, False)

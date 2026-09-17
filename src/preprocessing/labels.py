@@ -405,3 +405,68 @@ def run_all(data_root: str, out_dir: str | None = None, main_file_override: str 
     print("Saved:", metadata_path)
 
     return df, mapping_table, metadata
+
+
+def build_rq3_normalized_labels_from_raw(model_ready_dir: str, out_dir: str, groups: dict | None = None):
+    """Non-circular reconstruction of `rq3_normalized_labels_full.csv`
+    straight from raw OE+OptiTrack model_ready data — RESOLVED 2026-09-17,
+    previously this file was a pure pre-existing/downloaded dependency
+    with zero code in this repo proven to reproduce it (see this
+    module's own INPUT DEPENDENCY note above, and docs/table_to_source_
+    mapping.md's Appendix C row).
+
+    Chains two already-verified pieces, bypassing `run_all()`'s
+    heuristic MAIN_FILE auto-detection entirely (deliberately — that
+    heuristic scores among every CSV under a `data_root` that, in the
+    real orchestrator, also contains model_ready files, other
+    INTERACTION_* outputs, etc.; explicit is safer than "hope the
+    scoring still prefers the right file once more candidates exist"):
+
+      1. `eng3_recognition_labels.build_full_window_label_inventory()` —
+         the full interaction-window label inventory (CELL 9 Part B),
+         saved as `{out_dir}/../INTERACTION_ENG3/recognition_interaction_
+         window_label_inventory.csv` if that directory exists (kept in
+         sync with what `eng3_recognition_labels.run_all()` itself now
+         also saves there).
+      2. `apply_normalization()` + `select_final_label()` directly on
+         that inventory (`main_label_col="dominant_normalized_label"`) —
+         the exact two calls the real end-to-end proof script uses,
+         verbatim, not `run_all()`'s auto-detecting wrapper.
+
+    Verified 2026-09-17: 2/2080 rows show a tiny (0.004, i.e. ~1-sample)
+    `dominant_fraction_in_window` residual (and its knock-on effect on
+    `raw_label_counts`'s string repr) — a precisely-characterized,
+    already-documented artifact, not a new discrepancy. Every other
+    column across all 2080 rows is exact.
+
+    Returns (inventory_df, normalized_df) and writes
+    `{out_dir}/rq3_normalized_labels_full.csv` (+ `_compact.csv`)."""
+    from src.features import eng3_recognition_labels as e3  # local import, avoids a module-load cycle
+
+    if groups is None:
+        groups = e3.discover_model_ready_groups(model_ready_dir)
+    if not groups:
+        raise RuntimeError(f"No group has all 3 sensors' model_ready CSVs present under {model_ready_dir}")
+
+    inventory = e3.build_full_window_label_inventory(model_ready_dir, groups=groups)
+    if len(inventory) == 0:
+        raise RuntimeError("build_full_window_label_inventory() returned zero rows")
+
+    eng3_dir = os.path.normpath(os.path.join(out_dir, "..", "INTERACTION_ENG3"))
+    if os.path.isdir(eng3_dir):
+        inventory.to_csv(os.path.join(eng3_dir, "recognition_interaction_window_label_inventory.csv"), index=False)
+
+    normalized = apply_normalization(inventory, main_label_col="dominant_normalized_label")
+    normalized, rare = select_final_label(normalized)
+
+    os.makedirs(out_dir, exist_ok=True)
+    normalized_path = os.path.join(out_dir, "rq3_normalized_labels_full.csv")
+    normalized.to_csv(normalized_path, index=False)
+    print("Saved (reconstructed from raw):", normalized_path)
+
+    keep_cols = [c for c in ["group", "window_start", "dominant_normalized_label", "raw_label",
+                              "rq3_process_label", "rq3_compact_process_label",
+                              "rq3_conversation_binary", "rq3_final_label"] if c in normalized.columns]
+    normalized[keep_cols].to_csv(os.path.join(out_dir, "rq3_normalized_labels_compact.csv"), index=False)
+
+    return inventory, normalized

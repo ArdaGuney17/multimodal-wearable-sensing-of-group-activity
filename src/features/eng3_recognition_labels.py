@@ -507,6 +507,80 @@ def build_recognition_table(input_dir: str, groups: dict | None = None) -> pd.Da
     return pd.DataFrame(rows)
 
 
+def is_technical_label_audit(raw_label) -> bool:
+    """Verbatim-equivalent to the source notebook's FIRST `is_technical_
+    label`/`normalize_label` pair (the one that actually feeds the
+    `dominant_is_technical_or_sync` audit column — a different, slightly
+    less complete keyword set than `is_technical_or_sync()` above, which
+    feeds the real classification instead). Kept as a separate function
+    deliberately, not unified — see this module's other "two non-
+    identical copies" notes."""
+    lab = normalize_label_audit(raw_label)
+    if lab is None:
+        return False
+    technical_keywords = ["sync", "synchronization", "earable", "drop", "dropping", "calibration"]
+    return any(k in lab for k in technical_keywords)
+
+
+def build_full_window_label_inventory(input_dir: str, groups: dict | None = None) -> pd.DataFrame:
+    """Non-circular reconstruction of `recognition_interaction_window_
+    label_inventory.csv` — CELL 9 Part B's real inventory (every
+    interaction window's dominant-label audit columns), straight from
+    raw OE+OptiTrack model_ready data. Same CELL-8 window grid as
+    `build_recognition_table()` (identical lo/hi/inter computation), but
+    WITHOUT that function's downstream `map_to_5class()` + 3-core-class
+    restriction — this is the full interaction-window inventory
+    `task3_expanding_prefix.py` and `src/preprocessing/labels.py` both
+    read directly, one step upstream of the 3-class recognition table.
+    Reverse-engineered/verified 2026-09-17 (see
+    docs/session_2026-09-05_autonomous_progress.md): 0 mismatched
+    columns against the real pre-existing inventory file, all 9 groups."""
+    if groups is None:
+        groups = discover_model_ready_groups(input_dir)
+
+    rows = []
+    for g, paths in groups.items():
+        oe = load_sensor_csv(paths["openearable"], "video_time_s", ACC + GYR)
+        ot = load_sensor_csv(paths["optitrack"], "video_time_s", POS)
+
+        lo = max(oe["t"].min(), ot["t"].min())
+        hi = min(oe["t"].max(), ot["t"].max())
+        rt = oe["t"].values
+
+        inter = np.zeros(len(oe), dtype=bool)
+        for col in GROUP_TIERS:
+            if col in oe.columns:
+                inter |= oe[col].notna().values & (oe[col].astype(str).str.strip() != "").values
+
+        for ws in np.arange(lo, hi - WINDOW_S + 1e-9, STRIDE_S):
+            we = ws + WINDOW_S
+            m = (rt >= ws) & (rt < we)
+            if m.sum() == 0:
+                continue
+            binary_label = "interaction" if inter[m].mean() >= 0.5 else "non_interaction"
+            if binary_label != "interaction":
+                continue  # CELL 9 Part B only iterates eng3["label"] == "interaction" windows
+
+            inventory = window_label_inventory(oe, ws, we, GROUP_TIERS)
+            if inventory is None:
+                continue
+
+            rows.append({
+                "group": g, "window_start": ws, "window_end": we, "binary_label": binary_label,
+                "dominant_raw_label": inventory["dominant_raw_label"],
+                "dominant_normalized_label": inventory["dominant_normalized_label"],
+                "dominant_is_technical_or_sync": is_technical_label_audit(inventory["dominant_raw_label"]),
+                "dominant_fraction_in_window": inventory["dominant_fraction_in_window"],
+                "all_raw_labels_in_window": inventory["all_raw_labels_in_window"],
+                "source_tiers_in_window": inventory["source_tiers_in_window"],
+                "raw_label_counts": inventory["raw_label_counts"],
+            })
+
+        del oe, ot
+
+    return pd.DataFrame(rows)
+
+
 def run_all(data_root: str, out_dir: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Builds and saves both real ENG3 outputs under
     `{data_root}/INTERACTION_ENG3/`: `interaction_eng3_features.csv`
@@ -544,5 +618,15 @@ def run_all(data_root: str, out_dir: str | None = None) -> tuple[pd.DataFrame, p
     print("Shape:", recognition_core.shape)
     if len(recognition_core):
         print(recognition_core["recognition_label"].value_counts().to_string())
+
+    # Full interaction-window label inventory (CELL 9 Part B, no 3-class
+    # restriction) -- what task3_expanding_prefix.py and labels.py both
+    # actually read; RESOLVED 2026-09-17, previously nothing in this
+    # pipeline produced this file under its own name.
+    inventory = build_full_window_label_inventory(input_dir, groups=groups)
+    inventory_path = os.path.join(out_dir, "recognition_interaction_window_label_inventory.csv")
+    inventory.to_csv(inventory_path, index=False)
+    print(f"Saved full interaction-window label inventory: {inventory_path}")
+    print("Shape:", inventory.shape)
 
     return full_grid, recognition_core

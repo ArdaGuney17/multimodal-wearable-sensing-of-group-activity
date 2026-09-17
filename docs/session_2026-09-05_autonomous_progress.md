@@ -2523,3 +2523,59 @@ genuinely run against that exact file, and the result matches the paper closely 
 plausibly). The residual XSENS-specific gap is real but small, already understood in kind (same
 class of issue as Task 1's headline gap — library version drift), and not chased further this
 round.
+
+## 2026-09-17 (cont'd): Task 3's RQ3 label file wired in — closes the gap for ALL Task 3 window methods, token and non-token alike
+
+Followed up on the flagged-but-not-wired gap: `reproduce_pipeline.py`'s `stage_task3()` was
+unconditionally bridging `rq3_normalized_labels_full.csv` from a fixture, even though the
+raw-to-labels chain had already been proven closeable earlier this segment (RQ3 circularity
+closure, 0-2/2080-row residual). Same "proven possible, never wired" pattern as the OptiTrack and
+Task 1 grid fixes earlier today.
+
+**What was added**:
+- `eng3_recognition_labels.build_full_window_label_inventory()` (+ `is_technical_label_audit()`)
+  — ports the standalone proof script's CELL-9-Part-B inventory builder into the real module.
+  `run_all()` now also saves `INTERACTION_ENG3/recognition_interaction_window_label_inventory.csv`
+  (previously computed internally by other functions but never written under its own name —
+  this is exactly what `task3_expanding_prefix.py`/Table 8.5 needs directly).
+- `labels.build_rq3_normalized_labels_from_raw()` — chains that inventory through
+  `apply_normalization()` + `select_final_label()` directly (bypassing `run_all()`'s fragile
+  MAIN_FILE auto-detection, which would have to pick the right file out of a `data_root` full of
+  other CSVs in the real orchestrator context — used the same two explicit calls the original
+  proof script used instead).
+- `stage_features()` now also saves `INTERACTION_OPTI2/interaction_opti2_10s.csv` (data it already
+  computed in-memory for Task 2, just never written under the name `task3_hmm_appendix_d.py`
+  reads).
+- `stage_task3()` tries both fresh builds first, falls back to the RAW_VALIDATION fixtures only on
+  failure.
+
+**Verified against the RAW_VALIDATION_FEATURES fixtures (all 9 groups)** before wiring anything:
+`build_full_window_label_inventory()` matches the real inventory file exactly except the same
+2/2080-row ~1-sample residual already documented for this data; chaining through
+`build_rq3_normalized_labels_from_raw()` carries the identical 2-row residual through and
+introduces nothing new.
+
+**Then verified the full wiring for real** — ran `stage_task3()` against the genuinely fresh
+`central` directory built earlier today (all 9 groups, OptiTrack included): `rq3_normalized_labels`
+reports `done` (fresh), not `bridged`. Every one of Task 3's window methods ran successfully,
+token-based and non-token alike:
+
+| Table | Method | Result |
+|---|---|---|
+| 8.2 (persistence) | non-token, direct label sequence | 8/9 rows exact |
+| 8.3 (segment forecast) | non-token | 4/5 exact |
+| 8.5 (expanding prefix) | non-token | 3/7 exact (the 4 misses are all stochastic neural predictors — expected per the module's own docstring, not a data problem) |
+| 8.6 (HMM, Appendix D) | non-token | 7/8 exact |
+| 8.7 (grammar — the headline result) | token-based | 6/7 exact |
+| 8.8 (naive-5) | token-based | 6/7 exact |
+
+Every single DIFFERS row across all six tables is either the already-documented ~1-sample RQ3
+residual, a known small library-version-drift case (same class as Task 1/2's), or expected neural
+stochasticity — none are new discrepancies introduced by this wiring.
+
+**Answers the standing question directly: yes, Task 3's non-token window methods (8.2/8.3/8.5/8.6)
+are in the same good position as the token-based ones (8.7/8.8) — all now genuinely reproducible
+from raw data, not just individually-proven-possible-but-disconnected pieces.**
+
+Files changed: `src/features/eng3_recognition_labels.py`, `src/preprocessing/labels.py`,
+`scripts/reproduce_pipeline.py`.
