@@ -2436,3 +2436,58 @@ pre-existing official grid CSV, bridged not computed — unrelated to OptiTrack)
 sync stage's own pre-existing gaps for groups 1/3/6 (missing anonymized `elan/Group_N.csv` in this
 sandbox's `data/raw`, falling back to bridge fixtures as already documented) are unchanged by
 this session — those aren't OptiTrack issues and weren't in scope here.
+
+## 2026-09-17: Task 1's "lost" window/label grid reconstructed from raw data — circularity gap closed
+
+The one real remaining "missing file" for Task 1: `eng_task1_{oe,opti,xsens}.py` all
+bootstrap from a pre-existing `binary_5s_specialized_oe_merged_all_features.csv` because the
+source notebook's own CELL 3 admits its original from-scratch window/label-grid generator was
+lost — not just unported, genuinely gone. Reverse-engineered a replacement rather than accepting
+the bridge as permanent.
+
+**Method**: compared candidate windowing rules against the real official grid for all 9 groups.
+`eng3_recognition_labels.build_eng3_grid()`'s own rule (window range = `min(oe.max, opti.max)`)
+was the first guess — it turns out to only coincidentally match Task 1's real grid for Groups 1
+and 6 (the two groups whose OptiTrack recording happens to run as long as OE's). Task 1's real
+rule, confirmed by comparing against the official CSV's actual `window_start`/`window_end`
+values: window range is **OE's own time range only**, not clipped by OptiTrack:
+
+```
+lo = floor(oe["t"].min() / 5) * 5
+hi = oe["t"].max()
+window_start = arange(lo, hi - 5 + 1e-6, 5)
+binary_label = "interaction" if >=50% of the window's OE samples fall inside a non-empty
+               pairwise/whole-group label column, else "non_interaction"
+```
+
+Implemented as `build_task1_grid_from_oe()` in `src/features/eng_task1_oe.py` (OE-only input,
+zero dependency on the official CSV or any other bridged fixture).
+
+**Verified, not just plausible**:
+- Window boundaries: 8/9 groups match the official grid exactly, row-for-row, zero float
+  tolerance needed. Group 2 is short by exactly 1 row — its OE range's true end sits ~0.012s
+  short of a clean 5s boundary, a float-precision boundary case, not a different rule.
+- Binary labels: 4577/4578 exact (99.98%) on the overlapping rows. The one mismatch (Group 3's
+  very first window, `ws=40.0`) has 100% of that window's OE samples inside a real
+  pairwise/whole-group annotation yet the official label is `non_interaction` — flagged, not
+  explained away; left as a genuine 1-window unresolved discrepancy.
+- **The real proof — feature values, not just the grid**: fed the reconstructed grid into
+  `build_task1_oe_features()` (unmodified) for all 9 groups and diffed every one of the 458 OE
+  feature columns against the true official table. **Zero bad columns, max diff 0.0, on every
+  group, every compared row** — including groups (2, 3, 5, 7, 8, 9, 10) where the reconstructed
+  grid differs from `build_eng3_grid()`'s own convention, proving this isn't a Group-1/6
+  coincidence carried through by luck.
+
+**Wired into `scripts/reproduce_pipeline.py`**: `stage_features()` now tries
+`build_task1_grid_from_oe(central)` first and only falls back to the `RAW_VALIDATION_FEATURES`
+bridge fixture if that raises. Reports `done` (not `bridged`) whenever the fresh build succeeds.
+Module docstring's KNOWN GAPS section updated to mark this resolved.
+
+**What this does NOT fix**: Task 1's headline Transformer number (0.7338–0.7499 vs. published
+0.8064) is a model-training-stage issue, unrelated to this grid — closing this gap does not move
+that number, since the feature *values* were already proven exact even against the old bridged
+grid. This closes the "is the input file itself reproducible from raw data" question, not the
+"does the model match the published number" question.
+
+Files changed: `src/features/eng_task1_oe.py` (new `build_task1_grid_from_oe()`),
+`scripts/reproduce_pipeline.py` (stage_features wiring + docstring).

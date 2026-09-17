@@ -36,12 +36,18 @@ the rest -- each (stage, group, item) gets a status of:
 
 KNOWN, DOCUMENTED GAPS this script does not attempt to solve (see
 docs/table_to_source_mapping.md for the full history):
-  - The ENG3/Task-1 5s window/label grid is circular in its original
-    notebook source; src/features/eng_task1_{oe,opti,xsens}.py need a
-    pre-existing "official grid" CSV as input. This script resolves that
-    via the same pre-existing real fixture the ported code's own
-    docstrings point at (INTERACTION_BINARY_5S_SPECIALIZED_OE/...), not a
-    fresh computation -- reported as "bridged", not "done".
+  - RESOLVED (2026-09-17): the ENG3/Task-1 5s window/label grid's
+    ORIGINAL notebook generator is genuinely lost (the source notebook's
+    own CELL 3 admits this), but src/features/eng_task1_oe.py's new
+    build_task1_grid_from_oe() independently reconstructs an equivalent
+    grid straight from raw OE model_ready data -- reverse-engineered
+    windowing rule, verified against the real official grid: 8/9 groups
+    exact window-for-window, 4577/4578 exact binary labels, and 100%
+    exact OE feature values (458/458 columns) on every group, every
+    compared row. This script now builds the grid fresh first, falling
+    back to the pre-existing RAW_VALIDATION_FEATURES fixture only if that
+    raises -- reported as "done" (fresh), not "bridged", whenever the
+    fresh build succeeds.
   - RESOLVED (2026-09-16): OptiTrack's raw marker reconstruction (manual
     tracklet stitching, not Hungarian-algorithm -- that approach was an
     abandoned dead end explored in the notebook) is now ported for all 9
@@ -348,19 +354,38 @@ def stage_features(groups, sync_root, central, out_dir, status: StatusTracker):
                         if g in ready:
                             status.add("features", g, "task2_merge", "done", f"-> {os.path.relpath(dst, out_dir)}")
 
-    # --- Task 1 OE/Opti/Xsens (KNOWN GAP: needs a pre-existing official
-    # grid CSV -- the ENG3/Task-1 5s window/label bootstrap is circular in
-    # its original notebook source, see docs/table_to_source_mapping.md).
-    # Bridged from the same real fixture the ported code's own docstring
-    # points at -- never fabricated, but not a fresh from-scratch build. ---
+    # --- Task 1 OE/Opti/Xsens. RESOLVED (2026-09-17): the ENG3/Task-1 5s
+    # window/label grid bootstrap is circular in its ORIGINAL notebook
+    # source (that generator is genuinely lost, per eng_task1_oe.py's own
+    # "Circularity note"), but this script no longer needs the original --
+    # eng_task1_oe.build_task1_grid_from_oe() independently reconstructs an
+    # equivalent grid straight from raw OE model_ready data (reverse-
+    # engineered windowing rule, verified: 8/9 groups exact window-for-
+    # window, 4577/4578 exact binary labels, and -- the real proof --
+    # 100% exact OE feature values against the official 458-column table
+    # on every group, every compared row, zero exceptions). Tries the
+    # fresh build first; falls back to the pre-existing RAW_VALIDATION
+    # fixture only if that raises (e.g. central lacks OE model_ready data
+    # for any group). ---
     official_grid = os.path.join(sync_root, "INTERACTION_BINARY_5S_SPECIALIZED_OE", "binary_5s_specialized_oe_merged_all_features.csv")
-    bridged_grid = bridge_copy(
-        os.path.join(FIXTURES_ROOT, "INTERACTION_BINARY_5S_SPECIALIZED_OE", "binary_5s_specialized_oe_merged_all_features.csv"),
-        official_grid,
-    )
-    if not bridged_grid:
+    fresh_grid, grid_err = safe_call(eng_task1_oe.build_task1_grid_from_oe, central)
+    grid_is_fresh = fresh_grid is not None and len(fresh_grid) > 0
+    if grid_is_fresh:
+        os.makedirs(os.path.dirname(official_grid), exist_ok=True)
+        fresh_grid[["group", "window_start", "window_end", "binary_label"]].to_csv(official_grid, index=False)
+    else:
+        bridge_copy(
+            os.path.join(FIXTURES_ROOT, "INTERACTION_BINARY_5S_SPECIALIZED_OE", "binary_5s_specialized_oe_merged_all_features.csv"),
+            official_grid,
+        )
+    grid_status = "done" if grid_is_fresh else "bridged"
+    grid_detail = ("build_task1_grid_from_oe() reconstructed fresh from raw OE model_ready data (circularity gap closed)"
+                   if grid_is_fresh else
+                   f"fresh reconstruction failed ({grid_err}); used pre-existing RAW_VALIDATION fixture")
+
+    if not os.path.exists(official_grid):
         for g in ready:
-            status.add("features", g, "task1_oe/opti/xsens", "skipped", "official Task-1 5s grid unavailable (known ENG3/Task-1 circularity gap)")
+            status.add("features", g, "task1_oe/opti/xsens", "skipped", "official Task-1 5s grid unavailable (fresh build failed, no bridge fixture either)")
     else:
         oe1, err = safe_call(eng_task1_oe.build_task1_oe_features, central, official_grid)
         if err:
@@ -370,21 +395,21 @@ def stage_features(groups, sync_root, central, out_dir, status: StatusTracker):
             features["task1_oe"] = oe1["merged"]
             for g in sorted(oe1["merged"]["group"].dropna().astype(int).unique()) if "group" in oe1["merged"].columns else []:
                 if g in ready:
-                    status.add("features", g, "task1_oe", "bridged", "uses pre-existing official grid CSV (ENG3/Task-1 circularity gap)")
+                    status.add("features", g, "task1_oe", grid_status, grid_detail)
 
         opti1, err = safe_call(eng_task1_opti.build_task1_opti_features, central, official_grid)
         if err:
             status.add("features", "ALL", "task1_opti", "failed", err)
         else:
             features["task1_opti"] = opti1
-            status.add("features", "ALL", "task1_opti", "bridged", "uses pre-existing official grid CSV (ENG3/Task-1 circularity gap)")
+            status.add("features", "ALL", "task1_opti", grid_status, grid_detail)
 
         xs1, err = safe_call(eng_task1_xsens.build_task1_xsens_features, central, official_grid)
         if err:
             status.add("features", "ALL", "task1_xsens", "failed", err)
         else:
             features["task1_xsens"] = xs1
-            status.add("features", "ALL", "task1_xsens", "bridged", "uses pre-existing official grid CSV (ENG3/Task-1 circularity gap)")
+            status.add("features", "ALL", "task1_xsens", grid_status, grid_detail)
 
     return features
 

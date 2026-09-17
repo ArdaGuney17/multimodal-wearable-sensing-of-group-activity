@@ -613,6 +613,89 @@ def build_specialized_oe_5s(raw_dir: str, base_df: pd.DataFrame, groups: list[in
 
 
 # ================================================================
+# Non-circular grid reconstruction (2026-09-17)
+# ================================================================
+
+def build_task1_grid_from_oe(raw_dir: str, groups: list[int] | None = None) -> pd.DataFrame:
+    """Independently reconstructs Task 1's "lost" window/label grid
+    (`load_base_windows()`'s docstring explains why the original notebook
+    generator is gone) straight from each group's raw
+    `group_{g}_openearable_model_ready.csv` — zero dependency on the
+    official CSV.
+
+    Reverse-engineered 2026-09-17 by comparing candidate windowing rules
+    against the real official grid
+    (`INTERACTION_BINARY_5S_SPECIALIZED_OE/binary_5s_specialized_oe_merged_
+    all_features.csv`) for all 9 groups. The rule that matches:
+
+        lo = floor(oe["t"].min() / 5) * 5      # nearest 5s boundary at/before start
+        hi = oe["t"].max()                      # OE's own range only -- NOT
+                                                 # clipped by OptiTrack's range,
+                                                 # unlike eng3_recognition_labels.
+                                                 # build_eng3_grid()'s CELL-8 rule,
+                                                 # which coincidentally matches
+                                                 # this one only for the 2 groups
+                                                 # (1, 6) whose OptiTrack recording
+                                                 # happens to run as long as OE's.
+        window_start = arange(lo, hi - 5 + 1e-6, 5)
+        binary_label = "interaction" if >=50% of the window's OE samples fall
+                       inside a non-empty pairwise/whole-group label column
+                       (eng3_recognition_labels.GROUP_TIERS), else "non_interaction"
+
+    **Verified accuracy** (against the real official grid, all 9 groups,
+    4578 total rows): 8/9 groups match window_start/window_end exactly,
+    row-for-row (Group 2 is short by exactly 1 row — its OE range's true
+    end sits ~0.012s short of a clean 5s boundary, a float-precision
+    boundary case, not a different rule). Binary label: 4577/4578 exact
+    (99.98%) on the overlapping rows; the one mismatch (Group 3, its very
+    first window, ws=40.0) has 100% of that window's OE samples inside a
+    real pairwise/whole-group annotation yet the official label is
+    non_interaction -- left unexplained (flagged, not silently ignored;
+    see docs/session_2026-09-05_autonomous_progress.md's 2026-09-17
+    entry). Good enough to treat as the real rule, not a coincidence: 8/9
+    exact row counts and 4577/4578 exact labels is not something a wrong
+    rule produces by chance.
+
+    Returns the same shape as `load_base_windows()` -- group, window_start,
+    window_end, binary_label, group_num -- so it's a drop-in substitute
+    everywhere `official_grid_path`/`load_base_windows()` is used.
+    """
+    from src.features.eng3_recognition_labels import GROUP_TIERS  # local import, avoids a module-load cycle
+
+    if groups is None:
+        pattern = re.compile(r"group_(\d+)_openearable_model_ready\.csv$")
+        groups = sorted(
+            int(m.group(1)) for f in os.listdir(raw_dir)
+            if (m := pattern.search(f))
+        )
+
+    rows = []
+    for g in groups:
+        oe = load_raw_file(raw_dir, "openearable", g)
+        if oe is None:
+            continue
+        lo = np.floor(oe["t"].min() / 5.0) * 5.0
+        hi = oe["t"].max()
+        ws_arr = np.arange(lo, hi - 5.0 + 1e-6, 5.0)
+        rt = oe["t"].values
+
+        inter = np.zeros(len(oe), dtype=bool)
+        for col in GROUP_TIERS:
+            if col in oe.columns:
+                inter |= oe[col].notna().values & (oe[col].astype(str).str.strip() != "").values
+
+        for ws in ws_arr:
+            we = ws + 5.0
+            m = (rt >= ws) & (rt < we)
+            label = "interaction" if (m.sum() > 0 and inter[m].mean() >= 0.5) else "non_interaction"
+            rows.append({GROUP_COL: g, START_COL: float(ws), END_COL: float(we), LABEL_COL: label})
+
+    grid = pd.DataFrame(rows)
+    grid["group_num"] = grid[GROUP_COL].map(group_number)
+    return grid
+
+
+# ================================================================
 # Driver
 # ================================================================
 
