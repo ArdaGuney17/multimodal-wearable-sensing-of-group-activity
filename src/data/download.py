@@ -64,34 +64,77 @@ def _sha256(path: Path, chunk_size: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
-def _drive_download(file_id: str, dest: Path) -> None:
-    """Download a (possibly large) public Drive file, handling the "can't scan for
-    viruses" interstitial confirmation page Drive shows for files over ~25MB."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    session = requests.Session()
-    base_url = "https://drive.google.com/uc?export=download"
-
-    resp = session.get(base_url, params={"id": file_id}, stream=True, timeout=60)
-    token = None
-    for key, value in resp.cookies.items():
-        if key.startswith("download_warning"):
-            token = value
-    if token is None:
-        # Newer Drive UI embeds the confirm token in the HTML instead of a cookie.
-        m = re.search(r'confirm=([0-9A-Za-z_-]+)', resp.text)
-        if m:
-            token = m.group(1)
-
-    if token:
-        resp = session.get(base_url, params={"id": file_id, "confirm": token}, stream=True, timeout=60)
-
-    resp.raise_for_status()
+def _write_stream(resp, dest: Path) -> None:
     total = int(resp.headers.get("content-length", 0))
     with open(dest, "wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc=dest.name) as bar:
         for chunk in resp.iter_content(chunk_size=1 << 20):
             if chunk:
                 f.write(chunk)
                 bar.update(len(chunk))
+
+
+def _drive_download(file_id: str, dest: Path) -> None:
+    """Download a (possibly large) public Drive file, handling the "can't scan for
+    viruses" interstitial confirmation page Drive shows for files over ~25MB.
+
+    FIXED 2026-09-17 -- this was never actually tested end-to-end before today, and
+    turned out to be genuinely broken: Google changed the interstitial page's HTML
+    at some point after this was written. It no longer embeds a bare `confirm=TOKEN`
+    string in the page (the old regex below matches nothing now) or sets a
+    `download_warning` cookie -- confirmation is now a hidden form (`id`, `export`,
+    `confirm=t`, a per-request `uuid`) that POSTs/GETs to a DIFFERENT host,
+    `drive.usercontent.google.com/download`, not `drive.google.com/uc`. Without this
+    fix, `_drive_download()` silently wrote the tiny HTML interstitial page to disk
+    as if it were the real zip (caught downstream only by the SHA-256 mismatch, with
+    no clear diagnostic). Verified against the real group_1_raw.zip (56,244,231 bytes,
+    real PK\\x03\\x04 zip magic bytes) before trusting this for real downloads."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
+    base_url = "https://drive.google.com/uc?export=download"
+
+    resp = session.get(base_url, params={"id": file_id}, stream=True, timeout=60)
+
+    # Case 1: small file, Drive streams it directly -- no interstitial at all.
+    if "text/html" not in resp.headers.get("content-type", ""):
+        resp.raise_for_status()
+        _write_stream(resp, dest)
+        return
+
+    # Case 2: old-style interstitial -- confirm token as a cookie or a bare
+    # `confirm=TOKEN` string in the page (kept for older/smaller Drive files
+    # that may still use this path).
+    token = None
+    for key, value in resp.cookies.items():
+        if key.startswith("download_warning"):
+            token = value
+    if token is None:
+        m = re.search(r'confirm=([0-9A-Za-z_-]+)&', resp.text)
+        if m:
+            token = m.group(1)
+    if token:
+        resp = session.get(base_url, params={"id": file_id, "confirm": token}, stream=True, timeout=60)
+        if "text/html" not in resp.headers.get("content-type", ""):
+            resp.raise_for_status()
+            _write_stream(resp, dest)
+            return
+
+    # Case 3: current large-file interstitial -- a hidden form posting to
+    # drive.usercontent.google.com/download with id/export/confirm=t/uuid.
+    uuid_match = re.search(r'name="uuid" value="([^"]+)"', resp.text)
+    if uuid_match is None:
+        raise RuntimeError(
+            f"Could not extract a Drive download confirmation from the interstitial "
+            f"page for file_id={file_id}. Drive's page format may have changed again "
+            f"-- inspect the raw HTML (session.get(base_url, params={{'id': file_id}}).text) "
+            f"and update _drive_download() accordingly."
+        )
+    resp = session.get(
+        "https://drive.usercontent.google.com/download",
+        params={"id": file_id, "export": "download", "confirm": "t", "uuid": uuid_match.group(1)},
+        stream=True, timeout=60,
+    )
+    resp.raise_for_status()
+    _write_stream(resp, dest)
 
 
 def fetch_from_drive(force: bool = False) -> None:
