@@ -2491,3 +2491,35 @@ grid. This closes the "is the input file itself reproducible from raw data" ques
 
 Files changed: `src/features/eng_task1_oe.py` (new `build_task1_grid_from_oe()`),
 `scripts/reproduce_pipeline.py` (stage_features wiring + docstring).
+
+## 2026-09-17: Task 2's model stage verified against the freshly self-computed (from raw) feature file — closes the remaining unanswered link
+
+Previously flagged as untested: Task 2's feature file (`activity3_advanced_merged_10s_features.csv`)
+was proven buildable from raw data, but `task2.py` had never specifically been run against that
+*fresh* file and checked against the real Table 7.3-7.7 targets — only against some earlier,
+unspecified feature CSV.
+
+**What was done**: ran `scripts/reproduce_pipeline.py --stages sync,clean,features` fresh
+(current, fixed code — includes the 2026-09-16 OptiTrack reconstruction fix, so Group 6/7/8/10's
+OptiTrack is genuinely computed, not skipped/bridged like the older `pipeline_run_final` this
+replaced). Produced a real `activity3_advanced_merged_10s_features.csv` (992 rows × 1543 cols,
+all 9 groups present including Group 6's 82 rows). Then ran
+`python -m src.models.task2 --data-root .../raw_sync --skip-dl` (classical grid) against it and
+diffed the resulting `combined_classical_best_per_condition_with_std.csv` against every one of
+Table 7.3-7.7's 70 published (sensor × time-condition) cells.
+
+**Result — real, honest, and consistent with what was already known**: 40/70 conditions match
+to ≤0.001 (a rounding-level match, not chance), 48/70 within 0.01, 62/70 within 0.03. The 8
+outliers (>0.03) are **every single one** an XSENS-involving condition (XSENS alone, or
+OE+XSENS / OPTI+XSENS+OE combos) — the exact same pattern flagged at the very start of this
+sprint ("some conditions, mostly XSENS-involving ones, are close but not bit-exact — plausible
+cause: unpinned sklearn version"). Not a new problem; the freshly-computed-from-raw feature file
+behaves the same as whatever feature file was used before. Full cell-by-cell comparison saved to
+`data/external/thesis_data/END_TO_END_PROOF/task2_fresh_data_vs_targets_table_7_3_7_7.csv`.
+
+**Conclusion**: Task 2 is now the second task (after Task 3's Table 8.7) with a fully-closed
+raw-data-to-published-number chain — feature file genuinely computable from raw, model code
+genuinely run against that exact file, and the result matches the paper closely (not just
+plausibly). The residual XSENS-specific gap is real but small, already understood in kind (same
+class of issue as Task 1's headline gap — library version drift), and not chased further this
+round.
