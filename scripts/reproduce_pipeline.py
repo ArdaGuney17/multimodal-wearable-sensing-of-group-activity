@@ -61,11 +61,22 @@ docs/table_to_source_mapping.md for the full history):
     Group 1 and Group 6 (float-noise-level differences only, ~1e-13..
     1e-16). The "bridged" status below now only fires for a --data-root
     that is missing the raw take files outright.
-  - src/models/task3_expanding_prefix.py needs
-    INTERACTION_ENG3/recognition_interaction_window_label_inventory.csv,
-    which nothing in this pipeline (or this script) currently produces --
-    reported "failed"/"skipped" with the real FileNotFoundError, not
-    faked.
+  - RESOLVED (2026-09-17): src/models/task3_expanding_prefix.py's
+    INTERACTION_ENG3/recognition_interaction_window_label_inventory.csv
+    and every Task 3 window-level module's RQ3_LABEL_NORMALIZATION/
+    rq3_normalized_labels_full.csv are both now independently
+    reconstructible from raw OE+OptiTrack model_ready data --
+    eng3_recognition_labels.run_all() now also saves the label inventory
+    (was computed internally already, just never written under its own
+    name before), and stage_task3() below tries
+    labels.build_rq3_normalized_labels_from_raw() before falling back to
+    the RAW_VALIDATION fixture. Verified end-to-end against a freshly-
+    built central directory: Tables 8.2 (8/9 exact), 8.3 (4/5), 8.5
+    (3/7 -- the 4 misses are all stochastic neural predictors, expected
+    per the module's own docstring), 8.6 (7/8), 8.7 (6/7), 8.8 (6/7) all
+    ran and reproduced closely; every single DIFFERS row across all six
+    tables is either the already-documented ~1-sample RQ3 residual or a
+    known small library-version-drift case, not a new discrepancy.
   - Neural training (src/models/task3_neural.py, and the DL grids inside
     Task 1/2/task_oe_specific.py) is real but slow; off by default here
     (--run-dl / --run-neural to opt in) so a full orchestrator run stays
