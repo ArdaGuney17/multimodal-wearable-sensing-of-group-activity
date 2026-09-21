@@ -1294,15 +1294,28 @@ def _sorted_raw_take_paths(data_root: str, group: int) -> list[str]:
     """Raw Motive take exports for one group, sorted by their trailing
     Take number (filenames are inconsistent across groups -- 'Group-1',
     'Group_2', hyphen vs underscore -- so this matches on the number,
-    not a fixed template)."""
+    not a fixed template).
+
+    RESOLVED (2026-09-21): also case-insensitive now -- this machine's
+    own local data/raw happens to have capital-T 'Take' filenames (e.g.
+    'Arda_Group_9_Take_1.csv'), but the actual published/distributed
+    archive (confirmed by downloading it fresh, clean-room) uses
+    lowercase 'take' throughout (e.g. 'group_9_optitrack_take_1.csv').
+    The old case-sensitive regex matched 0 files against the real
+    distributed naming, silently falling through to the pre-reconstructed-
+    CSV fallback path (which also doesn't exist for fresh raw data),
+    reported as "skipped" -- i.e. this session's earlier "OptiTrack
+    reconstruction verified working" was only verified against this
+    machine's own non-representative local filenames, not the real
+    distributed ones, until this fix."""
     import glob as _glob
     import re as _re
 
     raw_dir = os.path.join(data_root, f"group_{group}", "optitrack")
-    candidates = _glob.glob(os.path.join(raw_dir, "*Take*.csv"))
+    candidates = _glob.glob(os.path.join(raw_dir, "*[Tt]ake*.csv"))
 
     def take_num(path: str) -> int:
-        m = _re.search(r"Take[_-](\d+)", os.path.basename(path))
+        m = _re.search(r"take[_-](\d+)", os.path.basename(path), _re.IGNORECASE)
         return int(m.group(1)) if m else -1
 
     return sorted((p for p in candidates if take_num(p) > 0), key=take_num)

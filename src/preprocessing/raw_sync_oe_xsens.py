@@ -787,7 +787,31 @@ def anonymize_elan(elan_df: pd.DataFrame, name_map: dict) -> pd.DataFrame:
 # ================================================================
 
 def raw_elan_path(data_root: str, group: int) -> str:
-    return os.path.join(data_root, f"group_{group}", "elan", f"Group_{group}.csv")
+    """RESOLVED (2026-09-21): the true raw, un-anonymized `Group_{g}.csv`
+    export is never actually part of the published/distributed dataset —
+    confirmed empirically for all 9 groups by downloading the real Drive
+    archive fresh (a clean-room test, not this machine's own local
+    data/raw, which happens to carry a few groups' true-raw files that
+    were never part of what gets distributed). What every group's real
+    zip DOES always have is `Group_{g}_individual_build_renamed.csv` —
+    the same already-anonymized, individual_build-gap-filled artifact
+    `raw_sync_optitrack.py`'s `elan_renamed_path()` already reads for
+    every group, and the same fallback
+    `run_end_to_end_proof_task3_rq3labels.py`'s `load_group_elan_df()`
+    already uses for groups 8/9/10 specifically. Same 9-column headerless
+    schema either way (`read_raw_elan()` doesn't need to change), and its
+    tiers are already canonical ParticipantN values, so the caller's own
+    `anonymize_elan()` step downstream is a safe no-op on it. Falls back
+    to the renamed file only when the true-raw one genuinely isn't
+    present, so this machine's own more-complete local data/raw (where
+    some groups DO have the true-raw file) is unaffected."""
+    raw_path = os.path.join(data_root, f"group_{group}", "elan", f"Group_{group}.csv")
+    if os.path.exists(raw_path):
+        return raw_path
+    renamed_path = os.path.join(data_root, f"group_{group}", "elan", f"Group_{group}_individual_build_renamed.csv")
+    if os.path.exists(renamed_path):
+        return renamed_path
+    return raw_path  # neither exists -- return the raw path so the caller's FileNotFoundError names the expected file
 
 
 RAW_ELAN_COLS = ["tier", "blank", "begin_hms", "begin_s", "end_hms", "end_s", "dur_hms", "dur_s", "label"]
