@@ -15,6 +15,13 @@ Data"* (Arda Güney, MSc Interaction Technology, University of Twente, 2026).
 > numbers across all 9 validated tables (54 results checked, 42 bit-exact, 12 close and explained,
 > 0 failures). GitHub shows that link as raw source, not a styled page — download it and open it
 > in a browser, or enable GitHub Pages for this repo, to see it rendered.
+>
+> **[Quickstart: clone → download → results →](docs/QUICKSTART.md)** — verified end to end
+> 2026-09-21 in a genuine clean-room clone (fresh venv, real public download, zero local
+> shortcuts): sync/clean/features run 128/128 clean against all 9 groups, and the resulting
+> model-ready files are content-identical to the official fixtures behind every headline result
+> in this repo (bar one documented, traced gap — see the quickstart's last section for exactly
+> what to expect).
 
 ## What this reproduces
 
@@ -61,10 +68,15 @@ notebooks_reference/  # Original notebooks kept for reference during porting onl
 
 ## Setup
 
+> **[Full step-by-step terminal walkthrough →](docs/QUICKSTART.md)** — clone to results, every
+> command verified by actually running it from scratch in a throwaway clone. Start there if
+> you want to reproduce this end to end; the sections below are a quicker reference.
+
 ```bash
-git clone <repo-url>
-cd multimodal-group-activity-recognition
+git clone https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity.git
+cd multimodal-wearable-sensing-of-group-activity
 python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
+pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu  # plain `pip install -r` fails on this pin, see below
 pip install -r requirements.txt
 ```
 
@@ -93,20 +105,14 @@ known data issues (e.g. a mislabeled folder) still being verified.
 
 ### Reproducing a table
 
-Each pipeline stage is a plain Python script/module (no notebooks in the critical path), intended
-to run in order:
-
-```bash
-python -m src.preprocessing.run_all      # raw -> synced, cleaned, windowed
-python -m src.features.run_all           # windowed -> feature tables (Ch.5)
-python -m src.models.task1               # -> results/tables/table_7_1.csv, table_7_2.csv
-python -m src.models.task2               # -> results/tables/table_7_3.csv ... table_7_7.csv
-python -m src.models.task_oe_specific    # -> results/tables/table_7_8.csv ... table_7_10.csv
-python -m src.eval.naive_cohort          # -> results/tables/table_7_11.csv ... table_7_13.csv, table_10_1.csv
-python -m src.models.task3               # -> results/tables/table_8_1.csv ... table_8_8.csv
-```
-
-(These entry points are the target interface — see the mapping doc for which actually exist yet.)
+`scripts/reproduce_pipeline.py` below is the one real, tested entry point — see
+[`docs/QUICKSTART.md`](docs/QUICKSTART.md) for the full walkthrough. A couple of individual
+modules also have their own `python -m` entry point if you want to run just one piece against
+already-built feature files: `python -m src.models.task1` and `python -m src.models.task2`
+(`--help` on either for options). Most other modules (`src/preprocessing/*`, `src/features/*`,
+the rest of `src/models/*`) are library code called by `reproduce_pipeline.py` rather than
+standalone scripts — see [`docs/table_to_source_mapping.md`](docs/table_to_source_mapping.md) for
+which module produces which table.
 
 ### Reproducing the pipeline
 
