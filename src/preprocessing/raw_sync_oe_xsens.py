@@ -219,6 +219,15 @@ class OeXsensSyncConfig:
     smooth_window_xsens: int | None = None
     apply_shift_openearable: bool = False              # whether run_all() writes the shifted OE file
     apply_shift_xsens: bool = False                    # whether run_all() writes the shifted Xsens file
+    # Group 1 only (2026-09-11 finding, re-surfaced 2026-09-21 by the shifted
+    # file now always being written -- see process_group()): Group 1's real
+    # Xsens SHIFTED fixture has its WHOLE video_time_s axis moved by the
+    # computed offset_s, not just its label boundaries -- every other
+    # group's shift only ever needed to move labels. shift_labeled_frame()
+    # already supports this (shift_time_axis=True), just never had a config
+    # knob wiring it in for a real (non-standalone-script) caller before.
+    shift_time_axis_openearable: bool = False
+    shift_time_axis_xsens: bool = False
     clean_xsens_artifacts: bool = False                # Groups 6 and 10
     # Which artifact-cleaning algorithm clean_xsens_artifacts=True dispatches
     # to (see clean_extreme_artifacts()/clean_extreme_artifacts_group10()
@@ -350,7 +359,8 @@ GROUP_SYNC_CONFIG: dict[int, OeXsensSyncConfig] = {
     # Group 1: last-10%-of-recording peak search; shift was computed by the
     # notebook but NOT adopted in its own final file selection -> unshifted.
     1: OeXsensSyncConfig(group=1, video_start_us=_VIDEO_START_US[1], xsens_to_video_offset_s=_XSENS_TO_VIDEO_OFFSET_S[1],
-                          sync_labels=("synchronizaiton_move",), search_mode="last10pct", shift_end_inclusive=True),
+                          sync_labels=("synchronizaiton_move",), search_mode="last10pct", shift_end_inclusive=True,
+                          shift_time_axis_xsens=True),
 
     # Group 2: no shift cell exists at all in the source notebook.
     2: OeXsensSyncConfig(group=2, video_start_us=_VIDEO_START_US[2], xsens_to_video_offset_s=_XSENS_TO_VIDEO_OFFSET_S[2],
@@ -1807,17 +1817,37 @@ def process_group(data_root: str, group: int, name_map: dict, out_dir: str | Non
                 else:
                     offset_s, sync_mid, peak_time = compute_peak_shift(shift_source, cfg, sensor)
                 results[sensor]["shift_info"] = {"offset_s": offset_s, "sync_mid": sync_mid, "peak_time": peak_time}
-                if apply_shift:
-                    if cfg.shift_from_elan:
-                        shifted_labeled = shift_labeled_frame_from_elan(shift_source, elan_df, offset_s,
-                                                                          time_col="video_time_s")
-                    else:
-                        shifted_labeled = shift_labeled_frame(shift_source, "video_time_s", offset_s,
-                                                                end_inclusive=cfg.shift_end_inclusive)
-                    shifted_name = SHIFTED_FILENAMES[(group, sensor)]
-                    shifted_path = output_path(data_root, group, sensor, shifted_name, out_dir)
-                    shifted_labeled.to_csv(shifted_path, index=False)
-                    results[sensor]["shifted_path"] = shifted_path
+                # RESOLVED (2026-09-21): write the shifted variant whenever it's
+                # successfully computed, not only when apply_shift_{sensor}=True.
+                # apply_shift_* keeps controlling which file is "the" plain/
+                # default output for other callers -- unchanged -- but a real
+                # gap surfaced by a genuine clean-room pipeline run (no bridge
+                # fixtures available to paper over it): global_cleaning.py's
+                # SELECTED_FILE_NAMES expects the shifted file for a few
+                # (group, sensor) pairs where apply_shift_* is False (Group 1
+                # xsens, Group 3 openearable confirmed so far), so run_all()
+                # was never actually writing what global_cleaning.py needed --
+                # previously masked because every test that reached this point
+                # either bridged from a pre-existing fixture or used the
+                # standalone proof script's own hand-written special case
+                # (bridge_group1_xsens_shifted()) instead of this module's
+                # real, generic path. Computing the shift is already
+                # unconditional (the line above) -- this just also persists it.
+                shift_time_axis = (cfg.shift_time_axis_openearable if sensor == "openearable"
+                                    else cfg.shift_time_axis_xsens)
+                if cfg.shift_from_elan:
+                    shifted_labeled = shift_labeled_frame_from_elan(shift_source, elan_df, offset_s,
+                                                                      time_col="video_time_s")
+                else:
+                    shifted_labeled = shift_labeled_frame(shift_source, "video_time_s", offset_s,
+                                                            end_inclusive=cfg.shift_end_inclusive,
+                                                            shift_time_axis=shift_time_axis)
+                shifted_name = SHIFTED_FILENAMES[(group, sensor)]
+                shifted_path = output_path(data_root, group, sensor, shifted_name, out_dir)
+                shifted_labeled.to_csv(shifted_path, index=False)
+                results[sensor]["shifted_path"] = shifted_path
+                if not apply_shift:
+                    results[sensor]["shifted_path_written_but_not_applied"] = True
             except ValueError as e:
                 results[sensor]["shift_error"] = str(e)
 
