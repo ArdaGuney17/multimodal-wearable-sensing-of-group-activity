@@ -428,6 +428,33 @@ def stage_features(groups, sync_root, central, out_dir, status: StatusTracker):
             features["task1_xsens"] = xs1
             status.add("features", "ALL", "task1_xsens", grid_status, grid_detail)
 
+        # RESOLVED (2026-09-21): src/models/common.py's own model-training stage
+        # reads the FULL merged OE+OPTI2+XSENS2 feature table from this exact
+        # official_grid path -- but everything above this point only ever wrote
+        # the 4-column grid there (needed as the *input* to build_task1_oe/opti/
+        # xsens_features, which is correct), never the ~1515-column merged
+        # output those functions computed. Previously masked entirely: when this
+        # path was bridged from the pre-existing official fixture, that fixture
+        # WAS the full merged file, so the same path coincidentally served both
+        # roles. Found by a genuine clean-room run (2026-09-21): the model stage
+        # loaded a real file at this path, but with only 6 columns -- every
+        # sensor combo's classical grid then skipped with "no usable features".
+        # Now overwrites official_grid with the actual full merged table once
+        # all three feature builders have already consumed the grid-only version.
+        if "task1_oe" in features:
+            full = features["task1_oe"]
+            merge_keys = ["group", "window_start", "window_end"]
+            if opti1 is not None and "merged" in opti1:
+                opti_only_cols = [c for c in opti1["merged"].columns if c not in full.columns or c in merge_keys]
+                full = full.merge(opti1["merged"][opti_only_cols], on=merge_keys, how="left")
+            if xs1 is not None and "merged" in xs1:
+                xs_only_cols = [c for c in xs1["merged"].columns if c not in full.columns or c in merge_keys]
+                full = full.merge(xs1["merged"][xs_only_cols], on=merge_keys, how="left")
+            full.to_csv(official_grid, index=False)
+            features["task1_full_merged"] = full
+            status.add("features", "ALL", "task1_full_merged",
+                       "done", f"overwrote {os.path.relpath(official_grid, out_dir)} with the full OE+OPTI2+XSENS2 table ({full.shape[1]} cols) -- the model stage reads this exact path")
+
     return features
 
 
