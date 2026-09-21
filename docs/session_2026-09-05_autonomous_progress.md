@@ -2579,3 +2579,69 @@ from raw data, not just individually-proven-possible-but-disconnected pieces.**
 
 Files changed: `src/features/eng3_recognition_labels.py`, `src/preprocessing/labels.py`,
 `scripts/reproduce_pipeline.py`.
+
+## 2026-09-21: Checkpoint — clean-room "stranger" verification in progress, protected against a mid-task usage-limit cutoff
+
+User asked whether the in-progress background pipeline run is protected if the 5-hour usage
+window ends mid-task. Writing this checkpoint so a fresh session (this one's continuation, or a
+new one) can resume cleanly without re-deriving context, exactly like the pattern already proven
+earlier this session (an internet outage killed the connection mid-download; the background OS
+process kept running and picked up cleanly on reconnect).
+
+**Where the clean-room test lives**: `C:\Users\Arda\AppData\Local\Temp\fresh_clone_test\repo` — a
+genuine `git clone` of `https://github.com/ArdaGuney17/multimodal-wearable-sensing-of-group-activity.git`
+into Windows temp, deliberately separate from the real working repo
+(`C:\Users\Arda\Desktop\multimodal-group-activity-recognition`), with its own fresh `.venv` and a
+real download of all 9 groups from the public Drive archive (checksum-verified). This is NOT
+reusing any of this machine's local fixtures — the point was to test what an actual stranger gets.
+
+**What this test found and fixed** (both committed AND pushed to origin/master already, commits
+`4e61822` and the two before it — safe even if this session dies right now):
+1. `src/data/download.py`'s `_drive_download()` was completely untested before this segment and
+   genuinely broken — Google changed the large-file interstitial page format. Fixed, verified with
+   a real download + SHA-256 match.
+2. `download.py`'s resume logic was all-or-nothing (whole-directory check) rather than per-group —
+   discovered for real when this exact test's internet connection dropped mid-download. Fixed to
+   skip per-group, verified by actually resuming an interrupted download.
+3. `raw_elan_path()` required the true-raw `Group_{g}.csv` ELAN export, which the clean-room test
+   proved is NOT part of the published dataset for ANY of the 9 groups (only
+   `Group_{g}_individual_build_renamed.csv` is) — this machine's own local `data/raw` happens to
+   carry the true-raw file for 6 groups, which is why this was previously miscounted as only a
+   3-group gap. Fixed with a fallback to the renamed file (same schema, safe).
+4. `_sorted_raw_take_paths()` (OptiTrack) used a case-sensitive 'Take' match — this machine's local
+   take files happen to be capital-T, but the real distributed archive uses lowercase throughout.
+   Fixed to be case-insensitive. **This means the "OptiTrack reconstruction verified working"
+   claim from earlier this same session was only ever verified against this machine's own
+   non-representative local filenames — now genuinely verified against the real public data.**
+
+After both fixes: re-ran the sync stage against the real freshly-downloaded data —
+**27/27 (9 groups × 3 sensors) report "done", zero skips, zero bridges** (was 63/63 skipped before
+the fix). This result is what's currently being built on.
+
+**In progress right now, at checkpoint time**: `scripts/reproduce_pipeline.py --stages clean,features`
+running in the fresh-clone repo against this real sync output — background task, real OS process
+(survives this chat session dying). Log:
+`/tmp/stranger_clean_features.log` (POSIX path as this Bash tool sees it — resolves under this
+session's own temp mapping). As of this checkpoint: groups 1-9's model_ready files are written
+(group 10 + the features stage itself still to come). Disk free: ~8.8GB and slowly dropping — worth
+checking early in any resumed session; if it gets critical (<2-3GB, the threshold used elsewhere in
+this project), the nested per-group `data/processed/pipeline_run/raw_sync/group_N/` directories
+under the fresh-clone repo are safe to delete once `ALL_MODEL_READY_FILES_IDENTITY_FIXED` (the
+central flat directory) has that group's 3 files — same pattern already used successfully earlier
+this session on the main working repo's own pipeline runs.
+
+**The exact next step the user asked for and I haven't done yet**: once clean+features finishes,
+diff the fresh-clone's genuinely-computed `central` model_ready files against
+`data/external/thesis_data/RAW_VALIDATION_FEATURES/group_N/group_N_{sensor}_model_ready.csv` in
+the MAIN working repo (`C:\Users\Arda\Desktop\multimodal-group-activity-recognition`) — the same
+fixtures that underlie every headline result reported throughout this whole reproduction project —
+to confirm the clean-room-fixed pipeline produces content-identical output, not just
+non-crashing output. This has NOT been done yet as of this checkpoint. Do this next.
+
+**If this session dies before that comparison happens**: resume by (1) checking
+`ps aux | grep python` to see if the clean+features run is still active, (2) tailing
+`/tmp/stranger_clean_features.log` or checking file timestamps under
+`fresh_clone_test\repo\data\processed\pipeline_run\raw_sync\ALL_MODEL_READY_FILES_IDENTITY_FIXED\`
+to see how far it got, (3) once complete, running the comparison described above, (4) if it matches,
+that closes the full "clone → download → sync → clean → features" honesty claim for real, matching
+the standard already met for Task 2/3's model-vs-fresh-data verification earlier this session.
