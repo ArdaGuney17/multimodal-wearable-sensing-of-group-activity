@@ -138,14 +138,28 @@ def _drive_download(file_id: str, dest: Path) -> None:
 
 
 def fetch_from_drive(force: bool = False) -> None:
-    if RAW_DIR.exists() and any(RAW_DIR.iterdir()) and not force:
-        print(f"{RAW_DIR} already has content — use --force to re-download.")
-        return
+    """Downloads + extracts every group in DRIVE_FILES.
 
+    RESOLVED (2026-09-21): resume used to be all-or-nothing -- any content
+    at all under RAW_DIR made this return immediately, so an interrupted
+    download (Drive throttles large files to ~500-650KB/s; the whole
+    9-group pull can take the better part of an hour and a dropped
+    connection partway through was a real, observed failure mode, not a
+    hypothetical) could only be resumed by re-downloading every group,
+    including ones already verified good, via --force. Now skips per
+    GROUP (checked by its own extracted directory, not the top-level
+    RAW_DIR), so re-running this after a partial failure only re-fetches
+    what's actually still missing."""
     tmp_dir = REPO_ROOT / "data" / "_drive_download_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
+    skipped = []
     for filename, info in DRIVE_FILES.items():
+        group_dir = RAW_DIR / filename.removesuffix("_raw.zip")
+        if group_dir.exists() and any(group_dir.iterdir()) and not force:
+            skipped.append(group_dir.name)
+            continue
+
         dest = tmp_dir / filename
         print(f"Downloading {filename} from Drive ...")
         _drive_download(info["id"], dest)
@@ -163,6 +177,8 @@ def fetch_from_drive(force: bool = False) -> None:
         with zipfile.ZipFile(dest) as zf:
             zf.extractall(RAW_DIR)
 
+    if skipped:
+        print(f"Skipped (already present): {', '.join(skipped)} — pass --force to re-download everything.")
     print(f"Done. Raw data is in {RAW_DIR}")
     print(
         "Note: this pulled from the interim Drive folder, not the permanent Zenodo "
