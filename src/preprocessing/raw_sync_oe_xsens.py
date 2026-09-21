@@ -812,16 +812,35 @@ def raw_elan_path(data_root: str, group: int) -> str:
     schema either way (`read_raw_elan()` doesn't need to change), and its
     tiers are already canonical ParticipantN values, so the caller's own
     `anonymize_elan()` step downstream is a safe no-op on it. Falls back
-    to the renamed file only when the true-raw one genuinely isn't
-    present, so this machine's own more-complete local data/raw (where
-    some groups DO have the true-raw file) is unaffected."""
+    to the renamed file when the true-raw one is either missing, OR
+    present but genuinely un-anonymized (real participant names, and
+    "Whole Group" with a space rather than "Whole_Group" -- confirmed for
+    Group 6's real local raw/data root by the clean-room test itself: it
+    has a raw take file, but its tier column is real names/"Whole Group",
+    so every canonical-tier lookup downstream returns zero rows and
+    `find_sync_segment_from_elan()` raises `KeyError: 'mid')` on an
+    empty-and-therefore-column-less frame -- the exact same un-
+    anonymized-raw-file pattern `run_end_to_end_proof_task3_rq3labels.py`'s
+    `load_group_elan_df()` already handles for groups 8/9/10, generalized
+    here rather than left as a proof-script-only special case). This
+    machine's own more-complete local data/raw (where some groups DO have
+    a genuinely canonical true-raw file) is unaffected -- the check reads
+    only the tier column, cheap even for a large file."""
     raw_path = os.path.join(data_root, f"group_{group}", "elan", f"Group_{group}.csv")
-    if os.path.exists(raw_path):
-        return raw_path
     renamed_path = os.path.join(data_root, f"group_{group}", "elan", f"Group_{group}_individual_build_renamed.csv")
+
+    def _has_canonical_whole_group(path: str) -> bool:
+        try:
+            tiers = pd.read_csv(path, header=None, usecols=[0], names=["tier"])["tier"]
+            return (tiers.astype(str) == "Whole_Group").any()
+        except Exception:
+            return False
+
+    if os.path.exists(raw_path) and _has_canonical_whole_group(raw_path):
+        return raw_path
     if os.path.exists(renamed_path):
         return renamed_path
-    return raw_path  # neither exists -- return the raw path so the caller's FileNotFoundError names the expected file
+    return raw_path  # neither usable -- return the raw path so the caller's error names the expected file
 
 
 RAW_ELAN_COLS = ["tier", "blank", "begin_hms", "begin_s", "end_hms", "end_s", "dur_hms", "dur_s", "label"]
@@ -1833,21 +1852,34 @@ def process_group(data_root: str, group: int, name_map: dict, out_dir: str | Non
                 # (bridge_group1_xsens_shifted()) instead of this module's
                 # real, generic path. Computing the shift is already
                 # unconditional (the line above) -- this just also persists it.
-                shift_time_axis = (cfg.shift_time_axis_openearable if sensor == "openearable"
-                                    else cfg.shift_time_axis_xsens)
-                if cfg.shift_from_elan:
-                    shifted_labeled = shift_labeled_frame_from_elan(shift_source, elan_df, offset_s,
-                                                                      time_col="video_time_s")
-                else:
-                    shifted_labeled = shift_labeled_frame(shift_source, "video_time_s", offset_s,
-                                                            end_inclusive=cfg.shift_end_inclusive,
-                                                            shift_time_axis=shift_time_axis)
-                shifted_name = SHIFTED_FILENAMES[(group, sensor)]
-                shifted_path = output_path(data_root, group, sensor, shifted_name, out_dir)
-                shifted_labeled.to_csv(shifted_path, index=False)
-                results[sensor]["shifted_path"] = shifted_path
-                if not apply_shift:
-                    results[sensor]["shifted_path_written_but_not_applied"] = True
+                # Not every (group, sensor) that computes a shift has a
+                # SHIFTED_FILENAMES entry -- some groups' shift cells exist
+                # in the source notebook for one sensor only (e.g. Group 6:
+                # only xsens has a real shifted-file convention; OE's own
+                # shift was computed but never given an output filename by
+                # the notebook, presumably because it was never adopted for
+                # OE there). Real regression found 2026-09-21 by the
+                # clean-room test itself: the unconditional write above
+                # tried SHIFTED_FILENAMES[(6,"openearable")] and raised
+                # KeyError, breaking a group that worked before this same
+                # fix. Guard on membership instead of assuming every sensor
+                # with a computed shift also has a filename for it.
+                if (group, sensor) in SHIFTED_FILENAMES:
+                    shift_time_axis = (cfg.shift_time_axis_openearable if sensor == "openearable"
+                                        else cfg.shift_time_axis_xsens)
+                    if cfg.shift_from_elan:
+                        shifted_labeled = shift_labeled_frame_from_elan(shift_source, elan_df, offset_s,
+                                                                          time_col="video_time_s")
+                    else:
+                        shifted_labeled = shift_labeled_frame(shift_source, "video_time_s", offset_s,
+                                                                end_inclusive=cfg.shift_end_inclusive,
+                                                                shift_time_axis=shift_time_axis)
+                    shifted_name = SHIFTED_FILENAMES[(group, sensor)]
+                    shifted_path = output_path(data_root, group, sensor, shifted_name, out_dir)
+                    shifted_labeled.to_csv(shifted_path, index=False)
+                    results[sensor]["shifted_path"] = shifted_path
+                    if not apply_shift:
+                        results[sensor]["shifted_path_written_but_not_applied"] = True
             except ValueError as e:
                 results[sensor]["shift_error"] = str(e)
 
