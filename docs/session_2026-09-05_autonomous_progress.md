@@ -2645,3 +2645,75 @@ non-crashing output. This has NOT been done yet as of this checkpoint. Do this n
 to see how far it got, (3) once complete, running the comparison described above, (4) if it matches,
 that closes the full "clone → download → sync → clean → features" honesty claim for real, matching
 the standard already met for Task 2/3's model-vs-fresh-data verification earlier this session.
+
+## 2026-09-21 (final): Clean-room stranger test — definitive result, content verified against headline-result fixtures
+
+Closed out the full "can anyone with git access clone this and get model-ready files and
+results" investigation. Summary of everything found and fixed this pass (5 real bugs, all
+committed and pushed — `4e61822`, `f55fd1a`, `cfd6714`, `6652431`, plus the earlier
+`22ce7d5` download.py fix):
+
+1. `download.py`'s `_drive_download()` — never tested before, genuinely broken (Drive's
+   large-file interstitial page format changed). Fixed, verified with a real download + SHA-256
+   match.
+2. `download.py`'s resume logic — was whole-directory, not per-group; an interrupted download
+   (this exact test's own internet connection dropped mid-run) could only resume via `--force`,
+   re-downloading everything. Fixed to skip per-group.
+3. `raw_elan_path()` required the true-raw `Group_{g}.csv`, which is NOT part of the published
+   dataset for ANY of the 9 groups (confirmed by downloading the real archive fresh) — only
+   `Group_{g}_individual_build_renamed.csv` is. This machine's own local `data/raw` happens to
+   carry the true-raw file for several groups, which is why this was previously miscounted as a
+   3-group gap. Fixed with a fallback.
+4. `_sorted_raw_take_paths()` (OptiTrack) used a case-sensitive 'Take' match; the real distributed
+   archive uses lowercase 'take' throughout. Fixed to be case-insensitive — this means the
+   "OptiTrack reconstruction verified working" claim from earlier this session was only ever
+   verified against this machine's own non-representative local filenames until this fix.
+5. `process_group()` only wrote the SHIFTED labeled file when `apply_shift_{sensor}=True`, but
+   `global_cleaning.py`'s `SELECTED_FILE_NAMES` expects that file for a few (group, sensor) pairs
+   regardless (Group 1 xsens, Group 3 openearable) — `apply_shift_*` was never actually "does this
+   file exist", only "is it the default". Fixed to always write when the shift is computed
+   (guarded on the filename mapping actually existing, after this exact fix caused and then fixed
+   its own regression on Group 6's OE, which has no shifted-file convention at all).
+6. Also wired `shift_time_axis_xsens=True` for Group 1 (closing a 2026-09-11 finding that was
+   previously only handled by a standalone proof script's special case, never a real caller).
+7. Group 6's `KeyError('mid')` — flagged as "undiagnosed" at the very start of this investigation,
+   finally root-caused: Group 6's raw ELAN file exists but is genuinely un-anonymized (real
+   participant names, "Whole Group" with a space), so canonical-tier lookups matched zero rows.
+   Fixed by extending the raw_elan_path() fallback to also trigger on a present-but-non-canonical
+   file, generalizing the same pattern `run_end_to_end_proof_task3_rq3labels.py` already used as a
+   groups-8/9/10-only special case.
+
+**Final verification, run for real**: a genuine `git clone` into a separate temp directory, fresh
+`.venv`, real download of all 9 groups from the public Drive archive (checksum-verified), then
+`scripts/reproduce_pipeline.py --stages sync,clean,features` against that data with zero bridge
+fixtures available (this clean-room repo has no `data/external/thesis_data` at all — that 16GB
+directory is gitignored and never distributed, confirmed).
+
+**Result: 128/128 — done. Zero failures, zero skips, zero bridges.** Every one of the 9 groups,
+all 3 sensors, computed genuinely from the raw public download alone.
+
+**Then the actual content check** (not just "did it run"): diffed every one of the 27
+(group, sensor) `model_ready.csv` outputs from this clean-room run against
+`RAW_VALIDATION_FEATURES` — the same official fixtures underlying every headline result reported
+throughout this whole reproduction project.
+
+- **23 of 27 pairs: fully exact** (excluding one already-established cosmetic path-string column).
+- **4 of 27 pairs: small, already-understood-class residuals** — a handful of label cells
+  (~0.001-0.01% of rows) in Group 1 xsens/optitrack and Groups 2/5/10 optitrack, the same order of
+  magnitude as pre-existing documented boundary noise elsewhere in this project. The "extra"
+  columns official has that ours doesn't (`alignment_method`, `optitrack_sync_time_s`, etc.) are
+  provenance/audit metadata, not real data — not a mismatch.
+- **1 of 27 pairs: a real, sizeable gap** — Group 3 openearable (62/73 columns differ). Its
+  bespoke two-stage shift (Step A on both sensors, Step B an Xsens-only refinement) is already
+  documented as a structural quirk this module's single-shift-per-sensor design doesn't fully
+  reproduce, flagged "out of scope" in earlier work. Group 3's xsens and optitrack are both clean.
+
+**Bottom line**: a stranger who clones this repo and downloads only the public data gets
+sync/clean/features output that is, with one specific and honestly-documented exception, content-
+identical to what actually produced the reported headline results — not a vague "close enough"
+claim.
+
+Left for a future pass, not attempted this round: actually closing Group 3's bespoke two-stage
+shift gap (would need porting the notebook's real Step A+B algorithm, not just the single-shift
+approximation); running the model stages (not just sync/clean/features) against this clean-room
+data end-to-end.
