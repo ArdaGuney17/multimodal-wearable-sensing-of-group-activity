@@ -7,7 +7,7 @@ Data"* (Arda Güney, MSc Interaction Technology, University of Twente, 2026).
 [![License: MIT](https://img.shields.io/badge/license-MIT-0f7f88)](LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB)](requirements.txt)
 [![Status: work in progress](https://img.shields.io/badge/status-work_in_progress-e69138)](docs/table_to_source_mapping.md)
-[![Reproduction check](https://img.shields.io/badge/reproduction-134_rows_checked%2C_92%25_within_3pp-2ea44f)](docs/reproduction_ledger.html)
+[![Reproduction check](https://img.shields.io/badge/reproduction-134_rows_checked%2C_92%25_within_3pp-2ea44f)](docs/reproduction_ledger.md)
 [![Last verified](https://img.shields.io/badge/clean--room_verified-2026--09--21-0f7f88)](docs/QUICKSTART.md)
 
 > [!IMPORTANT]
@@ -22,10 +22,11 @@ Data"* (Arda Güney, MSc Interaction Technology, University of Twente, 2026).
 > clean-room clone (fresh venv, real public download, zero local shortcuts):
 > - 🚀 **[Quickstart guide](docs/QUICKSTART.md)** — every command from `git clone` to real result
 >   tables, tested exactly as written.
-> - 📊 **[Reproduction Ledger](docs/reproduction_ledger.html)** — all 134 published numbers this
->   code produces, checked line by line against the thesis. GitHub shows this link as raw source,
->   not a styled page — download it and open it in a browser (or enable GitHub Pages for this
->   repo) to see it rendered.
+> - 📊 **[Reproduction Ledger](docs/reproduction_ledger.md)** — all 134 published numbers this
+>   code produces, checked line by line against the thesis, with a status badge (✅/🟡/🔴) per
+>   row. Renders directly on GitHub. Prefer a nicer look? Download
+>   **[reproduction_ledger.html](docs/reproduction_ledger.html)** and open it in a browser instead
+>   (GitHub shows `.html` as raw source, not styled).
 
 ## Contents
 
@@ -78,7 +79,8 @@ results/
   figures/      # Generated figures (not committed — regenerate locally)
 docs/
   QUICKSTART.md                     # Step-by-step terminal walkthrough, clone to results
-  reproduction_ledger.html          # Every result, line by line, vs. the thesis
+  reproduction_ledger.md            # Every result, line by line, vs. the thesis (GitHub-native)
+  reproduction_ledger.html          # Same data, styled — download + open in a browser
   thesis_reproduction_targets.md    # Ground-truth spec: every table, exact numbers, methodology
   drive_source_inventory.md         # Inventory of the original (messy) Colab/Drive history
   table_to_source_mapping.md        # Per-table status: which script reproduces which table
@@ -184,9 +186,11 @@ piece against already-built feature files: `python -m src.models.task1` and
 
 Once you've run `models,task3`, set your output next to the published numbers:
 
-- 📊 **Fastest path:** open **[docs/reproduction_ledger.html](docs/reproduction_ledger.html)** —
-  it already has this repo's own clean-room run compared line-by-line against every table (7.2
-  through 8.8), with a status pill (✅ exact / 🟡 close / 🔴 notable, traced) per row.
+- 📊 **Fastest path:** open **[docs/reproduction_ledger.md](docs/reproduction_ledger.md)** — it
+  already has this repo's own clean-room run compared line-by-line against every table (7.2
+  through 8.8), with a status badge (✅ exact / 🟡 close / 🔴 notable, traced) per row. Prefer a
+  styled, downloadable version? See
+  **[reproduction_ledger.html](docs/reproduction_ledger.html)**.
 - Task 3's modules additionally print a `REPRODUCTION CHECK AGAINST
   docs/thesis_reproduction_targets.md` block straight to the terminal as they run.
 - For Task 1/2 by hand: `table_7_1_7_2/.../*_best_per_condition_with_std.csv` or
